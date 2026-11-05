@@ -13,7 +13,10 @@ function add(data = {}) {
   $('services').append(card);
   for (const [key, value] of Object.entries(data)) { const input = card.querySelector(`[data-key="${key}"]`); if (input) input.value = value; }
   card.querySelector('.remove').onclick = () => { card.remove(); render(); };
-  card.addEventListener('input', () => { configure(card); render(); });
+  card.addEventListener('input', event => {
+    if (event.target.dataset.key === 'mode' && event.target.value === 'hot') card.querySelector('[data-key="kind"]').value = 'hot';
+    configure(card); render();
+  });
   configure(card); render();
 }
 function values(card) { return Object.fromEntries([...card.querySelectorAll('[data-key]')].map(input => [input.dataset.key, input.value])); }
