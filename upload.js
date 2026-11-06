@@ -8,25 +8,7 @@ async function prepareImage(image) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
   if (source.close) source.close();
-  // Remove long, straight table rules which otherwise merge digits into grid borders.
-  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height), d = pixels.data, w = canvas.width, h = canvas.height;
-  const black = i => d[i] + d[i + 1] + d[i + 2] < 450;
-  const erase = [];
-  for (let y = 0; y < h; y++) {
-    let start = -1;
-    for (let x = 0; x <= w; x++) {
-      if (x < w && black((y * w + x) * 4)) { if (start < 0) start = x; }
-      else if (start >= 0) { if (x - start > w * .15) erase.push([start, y, x - start, 1]); start = -1; }
-    }
-  }
-  for (let x = 0; x < w; x++) {
-    let start = -1;
-    for (let y = 0; y <= h; y++) {
-      if (y < h && black((y * w + x) * 4)) { if (start < 0) start = y; }
-      else if (start >= 0) { if (y - start > h * .035) erase.push([x, start, 1, y - start]); start = -1; }
-    }
-  }
-  ctx.fillStyle = '#fff'; erase.forEach(([x, y, width, height]) => ctx.fillRect(x - 1, y - 1, width + 2, height + 2));
+  // Keep glyph pixels intact: line removal corrupts digits in tightly cropped tables.
   return canvas;
 }
 async function recognizeImage(image, job) {
@@ -52,36 +34,42 @@ async function recognizeImage(image, job) {
     canvas.width = canvas.height = 0; return result;
   } finally { clearTimeout(deadline); await worker.terminate(); if (receiptWorker === worker) receiptWorker = null; }
 }
+async function cropAndRead(canvas, job, options={}) {
+  if(job!==receiptJob)throw new Error('Отменено');
+  const selected=await ReceiptCrop.select(canvas,options);
+  if(job!==receiptJob) { if(selected?.canvas)selected.canvas.width=selected.canvas.height=0;throw new Error('Отменено'); }
+  if(!selected||selected.skip)return {skipped:true};
+  try { return {...await recognizeImage(selected.canvas,job),period:selected.period}; }
+  finally { selected.canvas.width=selected.canvas.height=0; }
+}
+async function readPhoto(file,job) {
+  const bitmap=await createImageBitmap(file),scale=Math.min(1,3600/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
+  try {
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    return await cropAndRead(canvas,job,{page:1,pages:1});
+  } finally { canvas.width=canvas.height=0;bitmap.close(); }
+}
 async function readPdf(file, job) {
   const pdfjs = await import('./vendor/pdfjs-dist/pdf.mjs');
   pdfjs.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs-dist/pdf.worker.mjs';
   const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, useSystemFonts: true });
-  const pdf = await task.promise; const pages = [], geometry = [];
+  const pages=[],geometry=[];let month='';
   try {
-    if (pdf.numPages > 5) throw new Error('В PDF больше 5 страниц. Выберите отдельную квитанцию до 5 страниц.');
-    for (let i = 1; i <= pdf.numPages; i++) {
-      if (job !== receiptJob) throw new Error('Отменено');
-      uploadStatus(`Читаем PDF: страница ${i} из ${pdf.numPages}`);
-      const page = await pdf.getPage(i), content = await page.getTextContent();
-      const viewport1 = page.getViewport({ scale: 1 });
-      let pageWords = content.items.filter(item => item.str?.trim()).map(item => ({ x: item.transform[4], y: viewport1.height - item.transform[5] - item.height, w: item.width, h: item.height, text: item.str.trim() }));
-      const lines = [];
-      for (const item of content.items) {
-        if (!item.str) continue;
-        const y = item.transform[5];
-        let line = lines.find(row => Math.abs(row.y - y) < 2);
-        if (!line) { line = { y, parts: [] }; lines.push(line); }
-        line.parts.push({ x: item.transform[4], text: item.str });
-      }
-      let text = lines.sort((a, b) => b.y - a.y).map(line => line.parts.sort((a, b) => a.x - b.x).map(p => p.text).join(' ')).join('\n');
-      if (text.trim().length < 80) {
-        const viewport = page.getViewport({ scale: Math.min(2.5, 2400 / page.getViewport({ scale: 1 }).width) });
-        const canvas = document.createElement('canvas'); canvas.width = viewport.width; canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-        const recognized = await recognizeImage(canvas, job); text = recognized.text; pageWords = recognized.pages[0].words; canvas.width = canvas.height = 0;
-      }
-      pages.push(text); geometry.push({ words: pageWords });
+    const pdf=await task.promise;
+    if(pdf.numPages>5)throw new Error('В PDF больше 5 страниц. Выберите отдельную квитанцию до 5 страниц.');
+    for(let i=1;i<=pdf.numPages;i++) {
+      if(job!==receiptJob)throw new Error('Отменено');
+      uploadStatus(`Готовим PDF: страница ${i} из ${pdf.numPages}. Выделите таблицу без личных реквизитов.`);
+      const page=await pdf.getPage(i),base=page.getViewport({scale:1}),viewport=page.getViewport({scale:Math.min(2.5,2400/Math.max(base.width,base.height))});
+      const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+      try {
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        const read=await cropAndRead(canvas,job,{page:i,pages:pdf.numPages,period:month||document.getElementById('period').value,fixedPeriod:Boolean(month)});
+        if(read.skipped)continue;
+        month=read.period;pages.push(read.text);geometry.push(...read.pages);
+      } finally { canvas.width=canvas.height=0;page.cleanup(); }
     }
-    return { text: pages.join('\n'), pages: geometry };
+    return {text:pages.join('\n'),pages:geometry,period:month,skipped:!pages.length};
   } finally { await task.destroy(); }
 }
