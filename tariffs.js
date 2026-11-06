@@ -2,11 +2,12 @@
   'use strict';
   const fields = ['title','act','area','supplier','kind','period','discount','composite','component','stake','description','value','criteria','id','priceId'];
   const norm = value => String(value || '').toLowerCase().replace(/ё/g, 'е');
+  const patterns = { cold:/питьев|холодн/, hot:/горяч/, sewage:/водоотвед/, heat:/теплов/, gas:/газ/, electricity:/электр/, waste:/отход|тко/ };
   function decode(data) { return data.rows.map(row => Object.fromEntries(fields.map((field, i) => [field, data.strings[row[i]]]))); }
   function effective(record, month) {
     if (!/^20\d{2}-\d{2}$/.test(month)) return false;
-    const range = record.period.match(/(\d{4}-\d{2}-\d{2})\s*-\s*(\d{4}-\d{2}-\d{2})/);
-    if (!range || month < range[1].slice(0, 7) || month > range[2].slice(0, 7)) return false;
+    const range = record.period.match(/(\d{4}-\d{2}-\d{2})\s*-\s*(\d{4}-\d{2}-\d{2}|по\s+(?:наст\.?\s*время|настоящее\s+время))/i);
+    if (!range || month < range[1].slice(0, 7) || (/^\d/.test(range[2]) && month > range[2].slice(0, 7))) return false;
     const specific = record.description.match(/с\s*(\d{2})\.(\d{2})\.(20\d{2})\s*(?:по|[-–])\s*(\d{2})\.(\d{2})\.(20\d{2})/i);
     if (specific && (month < specific[3] + '-' + specific[2] || month > specific[6] + '-' + specific[5])) return false;
     const starts = [...record.description.matchAll(/(?:^|\s)с\s*(\d{2})[.](\d{2})[.](20\d{2})/gi)].map(m => m[3] + '-' + m[2]);
@@ -32,11 +33,83 @@
     for (const record of eligible) if (dated(record) && dated(record) > (latest.get(group(record)) || '')) latest.set(group(record), dated(record));
     return eligible.filter(r => !dated(r) || dated(r) === latest.get(group(r)));
   }
-  const api = { decode, effective, rate, active };
+  function candidates(data, row, context) {
+    const pattern = patterns[row.kind];
+    if (!pattern || !context.city) return [];
+    const city = norm(context.city).replace(/^г[. ]+/, '').replace(/ь$/, ''), supplier = context[row.kind === 'cold' || row.kind === 'sewage' ? 'waterSupplier' : row.kind === 'hot' || row.kind === 'heat' ? 'heatSupplier' : 'gasSupplier'];
+    const found = active(data, context.month).filter(record => {
+      const description = norm(record.description), kind = norm(record.kind), all = norm([record.title, record.area, record.description, record.criteria].join(' '));
+      if (!pattern.test(kind) || /транспортиров/.test(kind) || rate(record, row) === null) return false;
+      if (row.kind === 'cold' && /горяч/.test(kind) || row.kind === 'heat' && /горяч/.test(kind)) return false;
+      if (/без\s+(?:учета\s+)?(?:ндс|налога на добавленную)/.test(description)) return false;
+      const broad = /муниципальные образования.*(?:области|края|республики)|вся территория|территория.*субъекта/.test(norm(record.area));
+      if (!all.includes(city) && !broad) return false;
+      if (/муниципальн.*(?:район|округ)/.test(description) && !description.includes(city)) return false;
+      if (row.kind !== 'electricity') {
+        if (!supplier || record.supplier !== supplier) return false;
+        if (!/населени|с\s+(?:учетом\s+)?(?:ндс|налогом)|ндс не облагается/.test(description + ' ' + kind)) return false;
+      }
+      if (row.kind === 'heat' || row.kind === 'hot') {
+        if (context.heatSupply !== 'network') return false;
+        if (/коллектор|компенсаци.*потер/.test(description)) return false;
+        if (row.kind === 'hot') {
+          const component = /компонент/.test(norm(row.title));
+          if (!component && record.component) return false;
+          if (component && !record.component) return false;
+          if (context.hotSystem === 'open' && !/открыт/.test(kind) || context.hotSystem === 'closed' && !/закрыт/.test(kind)) return false;
+          if (component && !['open','closed'].includes(context.hotSystem)) return false;
+        }
+      }
+      if (row.kind === 'gas') {
+        const usage = norm(record.criteria + ' ' + record.description);
+        if (context.gasUse === 'cooking' && (!/приготовлен.*пищ.*газов.*плит/.test(usage) || /водонагревател/.test(usage))) return false;
+        if (context.gasUse === 'heater' && (!/газов.*водонагревател/.test(usage) || !/приготовлен.*пищ.*газов.*плит/.test(usage))) return false;
+        if (context.gasUse === 'heating' && !/на отопление/.test(usage)) return false;
+        if (!['cooking','heater','heating'].includes(context.gasUse) || /сжиженн/.test(kind)) return false;
+      }
+      if (row.kind === 'electricity') {
+        if (!/населени/.test(description) || /юридическ|осужден|исполнител|садовод|религиозн|гараж|воинск/.test(description)) return false;
+        if (context.electricCategory === 'ordinary' && /электроплит|электроотоп|сельск/.test(description)) return false;
+        if (context.electricCategory === 'electricStove' && !/электроплит/.test(description)) return false;
+        if (context.electricCategory === 'rural' && !/сельск/.test(description)) return false;
+        if (!['ordinary','electricStove','rural'].includes(context.electricCategory)) return false;
+        const band = /перв.{0,8}диапазон/.test(description) ? '1' : /втор.{0,8}диапазон/.test(description) ? '2' : /трет.{0,10}диапазон/.test(description) ? '3' : '';
+        if (band && band !== context.electricBand) return false;
+        if (context.electricZone === 'single') { if (/дифференцированн|интервал тарифных зон/.test(description + ' ' + norm(record.criteria))) return false; }
+        else if (['day','night'].includes(context.electricZone)) { if (!/двум|2 зон/.test(description) || !(context.electricZone === 'day' ? /дневн/ : /ночн/).test(norm(record.criteria))) return false; }
+        else return false;
+      }
+      return true;
+    });
+    if (row.kind !== 'gas') return found;
+    // A later gas price replaces an older open-ended price only for exactly
+    // the same supplier, territory and printed usage category.
+    const key = r => [r.supplier,r.area,r.kind,r.component,r.stake,r.criteria || r.description].map(norm).join('|');
+    const latest = new Map();
+    for (const r of found) { const start=r.period.slice(0,10); if(start>(latest.get(key(r))||''))latest.set(key(r),start); }
+    return found.filter(r=>r.period.slice(0,10)===latest.get(key(r)));
+  }
+  function match(data, row, context) {
+    if (!patterns[row.kind]) return { status:'separate', candidates:[] };
+    const found = candidates(data, row, context), prices = new Set(found.map(record => rate(record, row)));
+    return { status: prices.size === 1 ? 'matched' : found.length ? 'ambiguous' : 'missing', record:prices.size === 1 ? found[0] : null, candidates:found };
+  }
+  const api = { decode, effective, rate, active, candidates, match };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
   let manifest, records = [], target = null, loadVersion = 0, resultPage = 0;
   const el = id => document.getElementById(id);
-  const patterns = { cold:/питьев|холодн/, hot:/горяч|компонент/, sewage:/водоотвед/, heat:/теплов/, gas:/газ/, electricity:/электр/, waste:/отход|тко/ };
+  const regionCache = new Map();
+  api.regionData = async file => {
+    await init();
+    if (!file || !manifest.regions.some(r => r.file === file)) throw new Error('Выберите регион');
+    if (!regionCache.has(file)) {
+      const response = await fetch('data/tariffs/' + file);
+      if (!response.ok) throw new Error('Не удалось загрузить ставки региона. Повторите попытку.');
+      regionCache.set(file, decode(await response.json()));
+    }
+    return regionCache.get(file);
+  };
+  api.reference = (record, row, month) => ({...record, rate:rate(record,row), source:manifest.source, sourceDate:manifest.date, month});
   async function init() {
     if (!manifest) {
       try {

@@ -37,7 +37,9 @@
       }
     }
     if (valid && !difference && !checks.some(c => c.type === 'warning')) add('ok', 'Арифметика заполненных строк совпала', 'Долги, пени и неподтвержденные услуги в эту проверку не включены.');
-    if (officialCount < rows.length && rows.length) add('missing', `Тарифы ГИС: ${officialCount} из ${rows.length} услуг`, 'Выберите подходящие официальные ставки. Для содержания жилья и капремонта действуют отдельные основания.', 'tariff');
+    const eligible=rows.filter(r=>!['maintenance','capital','other'].includes(r.kind)).length;
+    if (officialCount < eligible) add('missing', `Ставки ГИС: проверено ${officialCount} из ${eligible} коммунальных услуг`, 'Укажите поставщиков и условия один раз для всех услуг. Неизвестные условия не позволяют подтвердить тариф.', 'tariff');
+    if(rows.some(r=>['maintenance','capital','other'].includes(r.kind)))add('missing','Содержание жилья и другие отдельные основания','Эти начисления не подтверждены реестром коммунальных тарифов. Нужны решение собственников, договор или отдельный региональный акт.', 'consult');
     if (docs.some(d => d.assumedPeriod)) add('missing', 'Уточните месяц квитанций', 'В части файлов месяц не распознан. Подтвердите его перед сравнением периодов.', 'documents');
     const areas = docs.filter(d => d.facts?.area !== null && d.facts?.area !== undefined).map(d => ({value:d.facts.area,name:d.name}));
     for (const row of rows) if (['maintenance','capital'].includes(row.kind) && row.mode !== 'norm' && row.unit === 'м²' && Number(row.quantity) > 0) areas.push({value:Number(row.quantity),name:row.title});

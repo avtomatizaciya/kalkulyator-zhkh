@@ -9,3 +9,10 @@
 @media(min-width:681px){.receipt-table td{padding-top:3px;padding-bottom:3px}.receipt-table input:not([type=checkbox]),.receipt-table select{height:34px;font-size:14px}.receipt-table td>small{font-size:10px}}
 
 #view-data .view-heading{flex-wrap:wrap}.data-actions{flex-shrink:0}@media(max-width:680px){.data-actions{width:100%;justify-content:space-between}.data-actions .btn{font-size:12px;min-height:34px}}
+
+.gis-callout{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 24px;margin:18px 0;background:var(--card,#fff);border:1px solid var(--border,#d8e2e8);border-radius:14px}.gis-callout strong{font-size:19px}.gis-callout p{margin:6px 0 0;max-width:650px;line-height:1.5}.gis-callout .btn{flex-shrink:0}#batch-dialog{max-width:880px;width:calc(100% - 32px)}#batch-fields select{width:100%;text-overflow:ellipsis}#batch-submit{margin-top:16px}@media(max-width:680px){.gis-callout{display:block;padding:18px}.gis-callout .btn{margin-top:14px;width:100%}#batch-fields{grid-template-columns:1fr}}
+@media(max-width:680px){.receipt-table td:nth-child(9)::before{display:block}.receipt-table .inactive td:nth-child(7),.receipt-table .inactive td:nth-child(9){display:none!important}}
+
+@media(max-width:680px){.receipt-table td:nth-child(7),.receipt-table td:nth-child(9),.receipt-table td:nth-child(10){display:block!important}.receipt-table td:nth-child(7)::before{content:"Тариф ГИС ЖКХ"}.receipt-table td:nth-child(9)::before{content:"Разница по ГИС"}}
+
+@media(max-width:680px){.gis-callout{padding:12px;margin:10px 0}.gis-callout strong{font-size:16px}.gis-callout p{font-size:13px;line-height:1.35}.gis-callout .btn{margin-top:8px}}
