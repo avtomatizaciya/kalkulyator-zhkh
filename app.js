@@ -64,7 +64,15 @@ function render() {
     const title = document.createElement('div'); title.textContent = valid === cards.length ? 'Сумма добавленных услуг' : 'Сумма только заполненных услуг';
     const sum = document.createElement('div'); sum.className = 'big'; sum.textContent = money(expected); box.append(title, sum); $('totals').append(box);
   }
-  $('comparison').textContent = compared ? `Сравнение ${compared} услуг с введенными начислениями: расчет ${money(comparedExpected)}, в квитанции ${money(billed)}, разница ${money(billed - comparedExpected)}.` : 'Для сравнения заполните поле «Начислено за услугу».';
+  $('comparison').replaceChildren();
+  if (compared) {
+    for (const [label, amount] of [['Расчет сравниваемых услуг', comparedExpected], ['В квитанции', billed], ['Разница', billed - comparedExpected]]) {
+      const row = document.createElement('div'); row.className = 'compare-row';
+      const title = document.createElement('span'); title.textContent = label;
+      const value = document.createElement('strong'); value.textContent = money(amount);
+      row.append(title, value); $('comparison').append(row);
+    }
+  } else $('comparison').textContent = 'Для сравнения заполните поле «Начислено за услугу».';
   $('warnings').textContent = valid < cards.length ? 'Есть незаполненные или ошибочные услуги. Они не вошли в сумму. Это неполный расчет.' : 'Сумма относится только к добавленным услугам. Долги, пени, льготы и перерасчеты не включены.';
   $('warnings').className = 'alert';
   $('request').textContent = questions.length ? `Прошу предоставить расшифровку начислений за ${$('period').value || 'указанный месяц'}.\n\n` + questions.join('\n\n') : 'Расхождений по заполненным начислениям пока нет. Для вопросов добавьте сумму из квитанции.';
@@ -94,7 +102,7 @@ function setPanel(manual) {
   $('tab-manual').setAttribute('aria-pressed', String(manual));
   $('tab-upload').setAttribute('aria-pressed', String(!manual));
 }
-$('tab-manual').onclick = showManual;
+$('tab-manual').onclick = () => { showManual(); render(); };
 $('tab-upload').onclick = () => setPanel(false);
 $('summary').textContent = 'Загрузите квитанцию или введите одну услугу.';
 $('comparison').textContent = 'Сравним объем × тариф с начислением за услугу.';

@@ -5,11 +5,13 @@ const uploadStatus = text => { document.getElementById('upload-status').textCont
 function clearReceipt() {
   if (receiptImageUrl) URL.revokeObjectURL(receiptImageUrl);
   receiptImageUrl = ''; receiptRows = [];
-  document.getElementById('receipt-image').removeAttribute('src');
+  document.getElementById('receipt-image-host').replaceChildren();
   document.getElementById('receipt-image-panel').hidden = true;
   document.getElementById('receipt-text').textContent = '';
   document.getElementById('receipt-preview').replaceChildren();
   document.getElementById('receipt-review').hidden = true;
+  document.getElementById('upload-intake').hidden = false;
+  document.getElementById('receipt-toolbar').hidden = true;
   uploadStatus('');
 }
 async function prepareImage(image) {
@@ -121,7 +123,9 @@ document.getElementById('receipt-file').onchange = async event => {
     const pdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
     if (!pdf && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Выберите JPG, PNG, WebP или PDF. Для HEIC сохраните фото как JPG.');
     if (!pdf) {
-      receiptImageUrl = URL.createObjectURL(file); document.getElementById('receipt-image').src = receiptImageUrl;
+      receiptImageUrl = URL.createObjectURL(file);
+      const original = document.createElement('img'); original.id = 'receipt-image'; original.alt = 'Выбранная квитанция'; original.src = receiptImageUrl;
+      document.getElementById('receipt-image-host').append(original);
       document.getElementById('receipt-image-panel').hidden = false;
     }
     uploadStatus('Открываем файл на вашем устройстве…');
@@ -134,9 +138,15 @@ document.getElementById('receipt-file').onchange = async event => {
     if (!receiptRows.length) reviewRow({ kind: 'other' });
     document.getElementById('apply-receipt').hidden = false;
     document.getElementById('receipt-review').hidden = false;
+    document.getElementById('upload-intake').hidden = true;
+    document.getElementById('receipt-toolbar').hidden = false;
+    document.getElementById('totals').replaceChildren();
+    document.getElementById('summary').textContent = 'Сначала сверьте данные квитанции.';
+    document.getElementById('comparison').textContent = 'Результат появится после нажатия «Проверить эти данные».';
+    document.getElementById('warnings').textContent = 'Найденные цифры пока не включены в расчет.';
     document.getElementById('receipt-period').textContent = parsed.period ? 'Период в квитанции: ' + parsed.period : 'Период не найден. Укажите месяц вручную.';
     document.getElementById('receipt-review').dataset.period = parsed.period;
-    uploadStatus(receiptRows.length ? `Найдено строк: ${receiptRows.length}. Сверьте цифры с квитанцией и подтвердите. Долг, пени и перерасчеты проверяются отдельно. Распознавание может пропустить услуги.` : 'Текст прочитан, но столбцы этой квитанции не удалось надежно разобрать. Откройте распознанный текст и перенесите объем, тариф и начисление вручную.');
+    uploadStatus(receiptRows.length ? `Найдено строк: ${receiptRows.length}. Проверьте поля ниже. Возможно, прочитаны не все услуги.` : 'Текст прочитан, но столбцы этой квитанции не удалось надежно разобрать. Откройте распознанный текст и перенесите объем, тариф и начисление вручную.');
   } catch (error) { if (job === receiptJob) uploadStatus('Не удалось прочитать: ' + error.message + ' Можно ввести данные вручную.'); }
   finally { if (job === receiptJob) { event.target.disabled = false; event.target.value = ''; document.getElementById('cancel-upload').hidden = true; } }
 };
@@ -151,11 +161,12 @@ document.getElementById('apply-receipt').onclick = () => {
   const error = receiptRows.map(row => Zhkh.calculate(row)).find(result => !result.ok);
   if (error) { uploadStatus('Проверьте выделенные поля: ' + error.error); return; }
   if (receiptRows.some(row => row.rateBasis === '1000' && row.kind !== 'gas')) { uploadStatus('Тариф за 1000 единиц в этой версии поддерживается для газа. Для другой услуги пересчитайте тариф за 1 единицу.'); return; }
-  const existing = [...document.querySelectorAll('.service')];
-  if (existing.length === 1 && !values(existing[0]).quantity && !values(existing[0]).rate) existing[0].remove();
+  document.getElementById('services').replaceChildren(); counter = 0;
+  document.getElementById('demo').hidden = true;
   receiptRows.forEach(row => add(row)); receiptRows = [];
   const period = document.getElementById('receipt-review').dataset.period; if (period) document.getElementById('period').value = period;
   document.getElementById('apply-receipt').hidden = true;
   showManual(); render(); uploadStatus('Строки добавлены в расчет. Проверьте и при необходимости исправьте цифры в полях.');
 };
 document.getElementById('add-review').onclick = () => reviewRow({ kind: 'other' });
+document.getElementById('choose-another').onclick = () => { clearReceipt(); document.getElementById('receipt-file').click(); };
