@@ -19,9 +19,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Stamp release
+        run: printf '%s\n' "$GITHUB_SHA" > release.txt
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
       - name: Publish to Pages
         id: deployment
         uses: actions/deploy-pages@v5
+      - name: Verify public release
+        env:
+          SITE_URL: https://avtomatizaciya.github.io/kalkulyator-zhkh/
+        run: |
+          python - <<'PY'
+          import os, time, urllib.request
+          base, expected = os.environ['SITE_URL'], os.environ['GITHUB_SHA']
+          for attempt in range(12):
+              try:
+                  with urllib.request.urlopen(base + 'release.txt?v=' + expected, timeout=15) as response:
+                      actual = response.read().decode().strip()
+                  with urllib.request.urlopen(base + '?v=' + expected, timeout=15) as response:
+                      html = response.read().decode()
+                  if actual == expected and 'style.css?v=20261106-2' in html:
+                      print('Verified public release:', expected)
+                      break
+              except OSError:
+                  pass
+              time.sleep(5)
+          else:
+              raise SystemExit('Public site does not serve the expected release')
+          PY
