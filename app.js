@@ -1,114 +1,37 @@
 'use strict';
-const $ = id => document.getElementById(id);
-const money = value => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' }).format(value / 100);
-const kinds = { cold: ['Холодная вода', 'м³'], hot: ['Горячая вода', 'м³'], sewage: ['Водоотведение', 'м³'], electricity: ['Электричество', 'кВт·ч'], heat: ['Отопление', 'Гкал'], gas: ['Газ', 'м³'], maintenance: ['Содержание жилья', 'м²'], capital: ['Капремонт', 'м²'], waste: ['Вывоз мусора', 'ед.'], other: ['Другая услуга', 'ед.'] };
-let counter = 0;
-function field(key, title, placeholder = '', value = '') {
-  return `<label class="fld">${title}<input data-key="${key}" type="text" inputmode="decimal" placeholder="${placeholder}" value="${value}" autocomplete="off"></label>`;
-}
-function add(data = {}) {
-  const card = document.createElement('article');
-  card.className = 'step service'; card.dataset.id = ++counter;
-  card.innerHTML = `<div class="row between"><h2>Услуга ${counter}</h2><button class="remove" aria-label="Удалить услугу ${counter}">Убрать</button></div><div class="grid"><label class="fld">Услуга<select data-key="kind">${Object.entries(kinds).map(([key, [name]]) => `<option value="${key}">${name}</option>`).join('')}</select></label><label class="fld">Как посчитать<select data-key="mode"><option value="quantity">Объем из квитанции × тариф</option><option value="meter">Разница показаний × тариф</option><option value="norm">Проживающие × норматив × тариф</option><option value="hot">Горячая вода: два компонента</option></select></label></div><div class="grid inputs"><div data-modes="quantity hot">${field('quantity', 'Объем, м³', 'Например, 8')}</div><div data-modes="meter">${field('previous', 'Предыдущие показания')}${field('current', 'Текущие показания')}</div><div data-modes="norm">${field('residents', 'Количество проживающих', '2')}${field('norm', 'Норматив на человека')}${field('coefficient', 'Коэффициент', '', '1')}</div><div>${field('rate', 'Тариф, ₽ за единицу', 'Из квитанции')}<label class="fld basis">Единица тарифа<select data-key="rateBasis"><option value="1">За 1 единицу</option><option value="1000">За 1000 единиц (газ)</option></select></label></div><div data-modes="hot">${field('heatPerCube', 'Подогрев воды, Гкал на м³')}${field('heatRate', 'Тепловая энергия, ₽ за Гкал')}</div><div>${field('billed', 'Начислено за услугу, ₽', 'Необязательно')}<details class="adjustments"><summary>Перерасчет и коэффициент</summary>${field('correction', 'Перерасчет, ₽ (+ или -)', '', '0')}${field('factor', 'Повышающий коэффициент', '', '1')}</details></div></div><p class="method-note note"></p><div class="line-result" aria-live="polite"></div>`;
-  $('services').append(card);
-  if (data.title) card.querySelector('h2').textContent = data.title;
-  if (data.unit) card.dataset.unit = data.unit;
-  for (const [key, value] of Object.entries(data)) { const input = card.querySelector(`[data-key="${key}"]`); if (input) input.value = value; }
-  card.querySelector('.remove').onclick = () => { card.remove(); render(); };
-  card.addEventListener('input', event => {
-    if (event.target.dataset.key === 'mode' && event.target.value === 'hot') card.querySelector('[data-key="kind"]').value = 'hot';
-    if (event.target.dataset.key === 'kind') delete card.dataset.unit;
-    configure(card); render();
-  });
-  if (Number(data.correction) || data.factor && Number(data.factor) !== 1) card.querySelector('.adjustments').open = true;
-  configure(card); render();
-}
-function values(card) { return Object.fromEntries([...card.querySelectorAll('[data-key]')].map(input => [input.dataset.key, input.value])); }
-function configure(card) {
-  const row = values(card);
-  card.querySelectorAll('[data-modes]').forEach(group => { group.hidden = !group.dataset.modes.split(' ').includes(row.mode); });
-  const unit = card.dataset.unit || kinds[row.kind][1];
-  card.querySelector('[data-key="quantity"]').parentNode.firstChild.textContent = `Объем или площадь, ${row.mode === 'hot' ? 'м³' : unit}`;
-  card.querySelector('[data-key="rate"]').parentNode.firstChild.textContent = row.mode === 'hot' ? 'Холодная вода, ₽ за м³' : `Тариф, ₽ за ${unit}`;
-  const basis = card.querySelector('[data-key=rateBasis]');
-  basis.parentElement.hidden = row.kind !== 'gas';
-  if (row.kind !== 'gas') basis.value = '1';
-  const notes = [];
-  if (row.mode === 'norm') notes.push('Этот режим для норматива на человека. Норматив на м² считайте через площадь × тариф × норматив, указав произведение площади и норматива как объем. Коэффициент укажите только при наличии основания.');
-  if (row.kind === 'heat') notes.push('Расчет по введенному объему Гкал. Распределение тепла по дому и годовая корректировка здесь не проверяются.');
-  if (row.kind === 'sewage') notes.push('При обычной схеме объем равен сумме холодной и горячей воды за тот же период.');
-  if (row.mode === 'hot') notes.push('Для двухкомпонентного расчета нужны тариф на воду, расход тепла на подогрев и тариф на тепло. Проверьте применимость этой формулы у исполнителя.');
-  card.querySelector('.method-note').textContent = notes.join(' ');
-}
-function render() {
-  let expected = 0, billed = 0, comparedExpected = 0, valid = 0, compared = 0;
-  const cards = [...document.querySelectorAll('.service')];
-  const questions = [];
-  cards.forEach(card => {
-    const row = values(card), result = Zhkh.calculate(row), output = card.querySelector('.line-result');
-    output.replaceChildren();
-    if (!result.ok) { output.className = 'line-result incomplete'; output.textContent = result.error; return; }
-    valid++; expected += result.expected;
-    output.className = 'line-result';
-    const amount = document.createElement('strong'); amount.textContent = money(result.expected); output.append(amount);
-    const formula = document.createElement('small'); formula.textContent = result.formula + ' = ' + money(result.expected); output.append(formula);
-    if (result.billed !== null) {
-      compared++; billed += result.billed; comparedExpected += result.expected;
-      const diff = document.createElement('p');
-      diff.className = result.difference ? 'difference' : 'match';
-      diff.textContent = result.difference === 0 ? 'Арифметика совпала' : `Начислено ${result.difference > 0 ? 'больше' : 'меньше'} расчета на ${money(Math.abs(result.difference))}`;
-      output.append(diff);
-      if (result.difference) questions.push(`${kinds[row.kind][0]}: в квитанции ${money(result.billed)}, по введенным данным ${money(result.expected)} (${result.formula}). Прошу пояснить расхождение, расчетный объем, примененный тариф, коэффициенты и перерасчеты.`);
-    }
-  });
-  $('summary').textContent = cards.length ? `Рассчитано услуг: ${valid} из ${cards.length}. Тарифы введены пользователем и независимо не проверены.` : 'Добавьте услугу, чтобы начать расчет.';
-  $('totals').replaceChildren();
-  if (valid) {
-    const box = document.createElement('div'); box.className = 'hero-result';
-    const title = document.createElement('div'); title.textContent = valid === cards.length ? 'Сумма добавленных услуг' : 'Сумма только заполненных услуг';
-    const sum = document.createElement('div'); sum.className = 'big'; sum.textContent = money(expected); box.append(title, sum); $('totals').append(box);
-  }
-  $('comparison').replaceChildren();
-  if (compared) {
-    for (const [label, amount] of [['Расчет сравниваемых услуг', comparedExpected], ['В квитанции', billed], ['Разница', billed - comparedExpected]]) {
-      const row = document.createElement('div'); row.className = 'compare-row';
-      const title = document.createElement('span'); title.textContent = label;
-      const value = document.createElement('strong'); value.textContent = money(amount);
-      row.append(title, value); $('comparison').append(row);
-    }
-  } else $('comparison').textContent = 'Для сравнения заполните поле «Начислено за услугу».';
-  $('warnings').textContent = valid < cards.length ? 'Есть незаполненные или ошибочные услуги. Они не вошли в сумму. Это неполный расчет.' : 'Сумма относится только к добавленным услугам. Долги, пени и льготы не включены. Перерасчеты учитываются только из соответствующих полей.';
-  $('warnings').className = 'alert';
-  $('request').textContent = questions.length ? `Прошу предоставить расшифровку начислений за ${$('period').value || 'указанный месяц'}.\n\n` + questions.join('\n\n') : 'Расхождений по заполненным начислениям пока нет. Для вопросов добавьте сумму из квитанции.';
-}
-$('add').onclick = () => add();
-$('period').oninput = render;
-$('reset').onclick = () => { $('cancel-upload').click(); clearReceipt(); $('services').replaceChildren(); $('demo').hidden = true; counter = 0; add(); };
-$('example').onclick = () => { showManual(); $('services').replaceChildren(); counter = 0; $('demo').hidden = false; add({ quantity: '8', rate: '55', billed: '500' }); add({ kind: 'electricity', mode: 'meter', previous: '1250', current: '1430', rate: '6,50', billed: '1170' }); };
-$('print').onclick = () => window.print();
-$('copy').onclick = async () => { try { await navigator.clipboard.writeText($('request').textContent); $('copy-status').textContent = 'Текст скопирован. Проверьте его перед отправкой.'; } catch { $('request-details').open = true; $('copy-status').textContent = 'Выделите и скопируйте текст ниже.'; } };
-$('theme').onclick = () => { const root = document.documentElement; const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; root.dataset.theme = dark ? 'light' : 'dark'; };
-const contactText = $('contact-text').textContent.trim();
-$('telegram-contact').href = 'https://t.me/pyankov_vv?text=' + encodeURIComponent(contactText);
-async function copyContact() {
-  try { await navigator.clipboard.writeText(contactText); $('contact-status').textContent = 'Текст скопирован. Если в Telegram поле пустое, вставьте его и допишите вопрос.'; }
-  catch { $('contact-draft').open = true; $('contact-status').textContent = 'Скопируйте текст из блока ниже и вставьте в Telegram.'; }
-}
-$('copy-contact').onclick = copyContact;
-$('telegram-contact').addEventListener('click', copyContact);
-add();
+const $=id=>document.getElementById(id),money=v=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB'}).format(v/100);
+const kinds={cold:['Холодная вода','м³'],hot:['Горячая вода','м³'],sewage:['Водоотведение','м³'],electricity:['Электричество','кВт·ч'],heat:['Отопление','Гкал'],gas:['Газ','м³'],maintenance:['Содержание жилья','м²'],capital:['Капремонт','м²'],waste:['Вывоз мусора','ед.'],other:['Другая услуга','ед.']};
+const state={entries:[],invoices:[],confirmed:false,demo:false,view:'upload',dataPage:0,checksPage:0,docsPage:0,profile:{sameHome:false,area:'',residents:'',meter:'unknown',transfer:'unknown',verification:'unknown'}};
+let nextId=0,editingId=null;
+const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e};
+function values(card){return Object.fromEntries([...card.querySelectorAll('[data-key]')].map(i=>[i.dataset.key,i.value]))}
+function period(){return $('period').value}
+function newEntry(data={}){const kind=data.kind||'cold';return {title:kinds[kind][0],unit:kinds[kind][1],id:String(++nextId),period:period(),sourceId:'manual',kind:'cold',mode:'quantity',quantity:'',rate:'',billed:'',correction:'0',factor:'1',rateBasis:'1',enabled:false,...data}}
+function ensureManualRows(){for(const [kind,[title,unit]] of Object.entries(kinds))if(kind!=='other'&&!state.entries.some(r=>r.sourceId==='manual'&&r.period===period()&&r.kind===kind))state.entries.push(newEntry({kind,title,unit}))}
+function displayedEntries(){const rows=state.entries.filter(r=>r.period===period()),imported=new Set(rows.filter(r=>r.sourceId!=='manual').map(r=>r.kind));return rows.filter(r=>r.sourceId!=='manual'||r.enabled||!imported.has(r.kind))}
+function switchView(view){state.view=view;document.querySelectorAll('.view').forEach(e=>e.hidden=e.id!=='view-'+view);document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===view?'page':'false'));if(view==='data')renderData();if(view==='result')renderResult();if(view==='documents')renderDocuments();window.scrollTo({top:0,behavior:'instant'})}
+function invalidateReceipt(){state.confirmed=false;$('receipt-review').dataset.applied='false';renderResult()}
+function saveCard(card){const row=state.entries.find(r=>r.id===card.dataset.entryId);if(!row)return null;Object.assign(row,values(card));row.enabled=card.querySelector('[type=checkbox]').checked;row.official=card.dataset.official?JSON.parse(card.dataset.official):null;return row}
+function updateReceiptRow(card){const row=saveCard(card);if(!row)return;const c=Zhkh.calculate(row),o=row.official&&row.official.month===period()?Zhkh.calculate({...row,rate:String(row.official.rate)}):null;for(const [key,value]of [['calculated',c.ok?money(c.expected):'Нет данных'],['arithmetic',c.ok&&c.billed!==null?money(c.difference):'·'],['official',o?.ok?money(o.expected):'Не выбран'],['official-difference',o?.ok&&o.billed!==null?money(o.difference):'·']])card.querySelector('[data-result='+key+']').textContent=value;card.classList.toggle('inactive',!row.enabled);card.querySelector('[data-result=arithmetic]').classList.toggle('mismatch',Boolean(c.ok&&c.difference));renderResult();updateOfficialSummary()}
+function editRow(id){editingId=id;const row=state.entries.find(r=>r.id===id);$('row-title').textContent=row.title||kinds[row.kind][0];$('row-fields').replaceChildren();const fields=[['mode','Способ расчета',[['quantity','Объем × тариф'],['meter','Разница показаний × тариф'],['norm','Проживающие × норматив × тариф'],['hot','ГВС: два компонента']]],['quantity','Объем / площадь'],['rate','Тариф'],['billed','Начислено за услугу'],['correction','Перерасчет, ₽ (+ или -)'],['factor','Повышающий коэффициент'],['rateBasis','Тариф за',[['1','1 единицу'],['1000','1000 единиц (газ)']]],['previous','Предыдущие показания'],['current','Текущие показания'],['residents','Число проживающих'],['norm','Норматив на человека'],['coefficient','Коэффициент норматива'],['heatPerCube','Гкал на м³'],['heatRate','Тариф на тепло, ₽/Гкал']];for(const[key,title,options]of fields){const label=node('label',title,'fld'),input=document.createElement(options?'select':'input');input.dataset.key=key;if(options)for(const[value,text]of options){const option=node('option',text);option.value=value;input.append(option)}else{input.type='text';input.inputMode='decimal'}input.value=row[key]??(key==='coefficient'?'1':'');label.append(input);$('row-fields').append(label)}function modeFields(){const mode=$('row-fields').querySelector('[data-key=mode]').value;for(const label of $('row-fields').children){const key=label.querySelector('[data-key]').dataset.key;label.hidden=(['previous','current'].includes(key)&&mode!=='meter')||(['residents','norm','coefficient'].includes(key)&&mode!=='norm')||(['heatPerCube','heatRate'].includes(key)&&mode!=='hot')||(key==='quantity'&&['norm','meter'].includes(mode))}}$('row-fields').querySelector('[data-key=mode]').onchange=modeFields;modeFields();$('row-dialog').showModal()}
+function reviewRow(row){const card=node('tr',undefined,'review-row');card.dataset.entryId=row.id;card.dataset.title=row.title||kinds[row.kind][0];card.dataset.unit=row.unit||kinds[row.kind][1];if(row.official)card.dataset.official=JSON.stringify(row.official);const service=node('td'),line=node('div',undefined,'service-name'),check=document.createElement('input');check.type='checkbox';check.checked=row.enabled;check.setAttribute('aria-label','Включить '+card.dataset.title);line.append(check);const select=document.createElement('select');select.dataset.key='kind';select.setAttribute('aria-label','Услуга');for(const[value,[label]]of Object.entries(kinds)){const o=node('option',value===row.kind?card.dataset.title:label);o.value=value;select.append(o)}select.value=row.kind;line.append(select);service.append(line,node('small',card.dataset.unit));const basis=document.createElement('input');basis.type='hidden';basis.dataset.key='rateBasis';basis.value=row.rateBasis||'1';service.append(basis);card.append(service);check.onchange=()=>{invalidateReceipt();updateReceiptRow(card)};select.onchange=()=>{row.kind=select.value;row.title=kinds[row.kind][0];row.unit=kinds[row.kind][1];row.official=null;invalidateReceipt();renderData()};for(const[key,title]of [['quantity','Объем'],['rate','Тариф, ₽'],['billed','Начислено, ₽']]){const td=node('td');td.dataset.label=title;const input=document.createElement('input');input.type='text';input.inputMode='decimal';input.dataset.key=key;input.value=row[key]||'';input.setAttribute('aria-label',title+' · '+card.dataset.title);input.oninput=()=>{check.checked=true;invalidateReceipt();updateReceiptRow(card)};td.append(input);card.append(td)}for(const name of ['calculated','arithmetic']){const td=node('td',undefined,'numeric');td.dataset.result=name;card.append(td)}const tariff=node('td'),choose=node('button',row.official?new Intl.NumberFormat('ru-RU',{maximumFractionDigits:6}).format(row.official.rate)+' ₽ · ГИС':'Выбрать','tariff-choose');choose.onclick=()=>Tariffs.open(card);tariff.append(choose);card.append(tariff);for(const name of ['official','official-difference']){const td=node('td',undefined,'numeric');td.dataset.result=name;card.append(td)}const more=node('td'),edit=node('button','Ещё','text-button');edit.onclick=()=>editRow(row.id);more.append(edit);card.append(more);$('receipt-preview').append(card);updateReceiptRow(card)}
+function pager(prefix,page,count,size,setter){const pages=Math.max(1,Math.ceil(count/size)),current=Math.min(page,pages-1);$(prefix+'-page').textContent=count?`${current*size+1}–${Math.min((current+1)*size,count)} из ${count}`:'Нет данных';$(prefix+'-prev').disabled=current===0;$(prefix+'-next').disabled=current===pages-1;$(prefix+'-prev').onclick=()=>setter(current-1);$(prefix+'-next').onclick=()=>setter(current+1);return current}
+function renderData(){ensureManualRows();const rows=displayedEntries(),size=innerWidth<=680?4:9;state.dataPage=pager('data',state.dataPage,rows.length,size,p=>{state.dataPage=p;renderData()});$('receipt-preview').replaceChildren();rows.slice(state.dataPage*size,(state.dataPage+1)*size).forEach(reviewRow);updateOfficialSummary()}
+function updateOfficialSummary(){const rows=state.entries.filter(r=>r.enabled&&r.period===period()),selected=rows.filter(r=>r.official&&r.official.month===period());$('official-summary').textContent=`Ставки ГИС выбраны для ${selected.length} из ${rows.length} включенных услуг. Объемы и перерасчеты проверяются отдельно.`;const sources=$('official-sources');sources.hidden=!selected.length;sources.querySelector('div').replaceChildren();for(const row of selected){const o=row.official,p=node('p',`${row.title}: ${o.value}. ${o.supplier}. ${o.description}. ${o.act}. Ставка ${o.priceId}. `),link=node('a','Выгрузка ГИС от '+o.sourceDate);link.href=o.source;link.target='_blank';link.rel='noopener';p.append(link);sources.querySelector('div').append(p)}}
+function analysis(){return ReceiptAnalysis.check(state.entries,state.invoices,state.profile,period())}
+function renderResult(){const r=analysis(),warnings=r.checks.filter(c=>c.type==='warning').length,missing=r.checks.filter(c=>c.type==='missing').length;$('coverage').textContent=(state.demo?'Учебный пример · ':'')+`Услуг: ${r.valid} из ${r.rows} · ставок ГИС: ${r.officialCount} · квитанций: ${state.invoices.filter(d=>d.period===period()).length}`;$('verdict').textContent=!r.rows?'Добавьте цифры квитанции':warnings?'Есть расхождения для проверки':missing||!state.confirmed?'Проверено частично':'В проверенных данных расхождений нет';$('total-billed').textContent=money(r.billed);$('total-difference').textContent=r.valid?money(r.difference):'Нет данных';$('total-official').textContent=r.officialCount?money(r.officialDifference):'Не проверено';$('confirm-data').hidden=!r.rows||state.confirmed;const checks=r.checks.length?r.checks:[{type:'missing',title:'Начните с квитанции или ручного ввода',detail:'Можно добавить несколько поставщиков и разные месяцы. Цифры распределятся по периодам.',action:'data'}];const checkSize=innerWidth<=680?2:3;state.checksPage=pager('checks',state.checksPage,checks.length,checkSize,p=>{state.checksPage=p;renderResult()});$('checks').replaceChildren();for(const c of checks.slice(state.checksPage*checkSize,state.checksPage*checkSize+checkSize)){const card=node('article',undefined,'check '+c.type),button=node('button',c.action==='profile'?'Уточнить данные':c.action==='consult'?'Что делать':'Посмотреть','text-button');button.onclick=()=>c.action==='profile'?$('profile-dialog').showModal():c.action==='consult'?switchView('help'):c.action==='documents'?switchView('documents'):switchView('data');card.append(node('h2',c.title),node('p',c.detail),button);$('checks').append(card)}$('result-scope').textContent=(state.confirmed?'Цифры подтверждены. ':'До сверки распознанных цифр результат предварительный. ')+'Это проверка указанных данных, а не заключение о законности начислений.';$('request').textContent=r.checks.filter(c=>c.type==='warning').map(c=>`Прошу пояснить расчет за ${period()}. ${c.title}. ${c.detail}`).join('\n\n')||'По проверенным данным вопросы о расхождениях пока не сформированы.'}
+function renderDocuments(){$('document-count').textContent=state.invoices.length;state.docsPage=pager('docs',state.docsPage,state.invoices.length,4,p=>{state.docsPage=p;renderDocuments()});$('documents').replaceChildren();for(const doc of state.invoices.slice(state.docsPage*4,state.docsPage*4+4)){const card=node('article',undefined,'document-row'),label=node('label',doc.assumedPeriod?'Подтвердите месяц':'Месяц'),input=document.createElement('input');input.type='month';input.value=doc.period;input.onchange=()=>{if(!input.value)return;doc.period=input.value;doc.assumedPeriod=false;for(const row of state.entries.filter(r=>r.sourceId===doc.id)){row.period=doc.period;row.official=null}setPeriod(doc.period)};label.append(input);const text=node('button','Текст','text-button');text.onclick=()=>{$('receipt-text').textContent=doc.text;$('text-dialog').showModal()};const remove=node('button','Удалить','text-button');remove.onclick=()=>{state.invoices=state.invoices.filter(d=>d.id!==doc.id);state.entries=state.entries.filter(r=>r.sourceId!==doc.id);invalidateReceipt();renderAll()};card.append(node('strong',doc.name),node('span',`Строк: ${state.entries.filter(r=>r.sourceId===doc.id).length}`),label,text,remove);$('documents').append(card)}if(!state.invoices.length)$('documents').append(node('p','Можно загрузить квитанции разных поставщиков и за другие месяцы.','note'))}
+function setPeriod(value){$('period').value=value;$('receipt-review').dataset.period=value;state.dataPage=0;state.checksPage=0;renderAll()}
+function renderAll(){ensureManualRows();renderData();renderDocuments();renderResult()}
+async function importFiles(files){if(!files.length)return;if(state.demo){state.entries=[];state.demo=false;}const job=++receiptJob;let added=0,duplicates=0;const errors=[];$('cancel-upload').hidden=false;$('receipt-file').disabled=true;try{for(const[index,file]of [...files].slice(0,10).entries()){if(job!==receiptJob)break;try{uploadStatus(`Читаем ${index+1} из ${Math.min(files.length,10)}: ${file.name}`);if(file.size>15*1024*1024)throw new Error('больше 15 МБ');const pdf=file.type==='application/pdf'||/\.pdf$/i.test(file.name);if(!pdf&&!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('нужен JPG, PNG, WebP или PDF');const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer()),id=Array.from(new Uint8Array(digest)).map(v=>v.toString(16).padStart(2,'0')).join('');if(state.invoices.some(d=>d.id===id)){duplicates++;continue}const read=pdf?await readPdf(file,job):await recognizeImage(file,job);if(job!==receiptJob)break;if(!read.text.trim())throw new Error('нет читаемого текста');const parsed=Receipt.parse(read.text,read.pages),month=parsed.period||period();state.invoices.push({id,name:file.name,period:month,assumedPeriod:!parsed.period,text:read.text,facts:ReceiptAnalysis.facts(read.text)});for(const row of parsed.rows)state.entries.push(newEntry({...row,sourceId:id,period:month,enabled:true}));added++;state.confirmed=false;setPeriod(month)}catch(error){if(job!==receiptJob)break;errors.push(file.name+': '+error.message)}}}finally{$('receipt-file').disabled=false;$('receipt-file').value='';$('cancel-upload').hidden=true;renderAll();if(added){setPeriod(state.invoices.map(d=>d.period).sort().at(-1));switchView('result');}uploadStatus(`Добавлено: ${added}. Повторных файлов: ${duplicates}.`+(errors.length?' Не прочитано: '+errors.join('; '):'')+(files.length>10?' За раз читаем первые 10 файлов. Остальные добавьте следующей загрузкой.':''))}}
+$('receipt-file').onchange=e=>importFiles(e.target.files);$('upload-more').onclick=()=>$('receipt-file').click();$('manual-start').onclick=()=>switchView('data');$('cancel-upload').onclick=()=>{receiptJob++;if(receiptWorker){receiptWorker.terminate();receiptWorker=null}uploadStatus('Чтение отменено. Уже добавленные квитанции сохранены.')};
+for(const button of document.querySelectorAll('[data-view]'))button.onclick=()=>switchView(button.dataset.view);
+$('period').onchange=()=>{if(period())setPeriod(period())};$('confirm-data').onclick=()=>{state.confirmed=true;$('receipt-review').dataset.applied='true';renderResult()};$('add-row').onclick=()=>{state.entries.push(newEntry({kind:'other',title:'Другая услуга',unit:'ед.',enabled:true}));state.dataPage=Math.floor((displayedEntries().length-1)/(innerWidth<=680?4:9));renderData()};
+$('row-save').onclick=()=>{const row=state.entries.find(r=>r.id===editingId);Object.assign(row,values($('row-fields')));row.enabled=true;row.official=null;$('row-dialog').close();invalidateReceipt();renderData()};$('row-tariff').onclick=()=>{$('row-save').click();const card=[...document.querySelectorAll('.review-row')].find(c=>c.dataset.entryId===editingId);if(card)Tariffs.open(card)};
+$('profile-open').onclick=()=>$('profile-dialog').showModal();$('profile-form').onsubmit=e=>{e.preventDefault();state.profile={sameHome:$('same-home').checked,area:$('actual-area').value.replace(',','.'),residents:$('residents').value,meter:$('meter').value,transfer:$('transfer').value,verification:$('verification').value};$('profile-dialog').close();invalidateReceipt()};for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>$(button.dataset.close).close();
+$('clear-all').onclick=()=>{receiptJob++;state.entries=[];state.invoices=[];state.confirmed=false;renderAll();switchView('upload');uploadStatus('Данные очищены.')};$('example').onclick=()=>{state.demo=true;state.entries=[];ensureManualRows();state.entries.push(newEntry({sourceId:'demo',title:'Холодная вода · пример',kind:'cold',unit:'м³',quantity:'8',rate:'55',billed:'500',enabled:true}),newEntry({sourceId:'demo',title:'Электричество · пример',kind:'electricity',unit:'кВт·ч',quantity:'180',rate:'6.5',billed:'1170',enabled:true}));renderAll();switchView('result')};
+$('consult').onclick=()=>switchView('help');$('print').onclick=()=>window.print();$('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('request').textContent);$('copy-status').textContent='Вопросы скопированы. Проверьте текст перед отправкой.'}catch{$('copy-status').textContent='Откройте вопросы и скопируйте текст вручную.'}};$('theme').onclick=()=>{const html=document.documentElement,dark=html.dataset.theme?html.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;html.dataset.theme=dark?'light':'dark'};
+const contactText=$('contact-text').textContent.trim();$('telegram-contact').href='https://t.me/pyankov_vv?text='+encodeURIComponent(contactText);async function copyContact(){try{await navigator.clipboard.writeText(contactText);$('contact-status').textContent='Если поле Telegram пустое, вставьте скопированный текст.'}catch{$('contact-draft').open=true}}$('copy-contact').onclick=copyContact;$('telegram-contact').onclick=copyContact;
+renderAll();Tariffs.init().catch(()=>{$('region').options[0].textContent='Справочник временно недоступен'});
 
-function showManual() { setPanel(true); }
-function setPanel(manual) {
-  $('manual-panel').hidden = !manual; $('upload-panel').hidden = manual;
-  $('tab-manual').className = 'btn ' + (manual ? 'pri' : 'ghost');
-  $('tab-upload').className = 'btn ' + (manual ? 'ghost' : 'pri');
-  $('tab-manual').setAttribute('aria-pressed', String(manual));
-  $('tab-upload').setAttribute('aria-pressed', String(!manual));
-  if (!manual && !$('receipt-review').hidden && $('receipt-review').dataset.applied === 'false') showReceiptPending();
-}
-$('tab-manual').onclick = () => { showManual(); render(); };
-$('tab-upload').onclick = () => setPanel(false);
-$('summary').textContent = 'Загрузите квитанцию или введите одну услугу.';
-$('comparison').textContent = 'Сравним объем × тариф с начислением за услугу.';
-$('warnings').textContent = 'Фото читается автоматически. Найденные цифры нужно подтвердить.';
+document.addEventListener('tariff-region-change',()=>{for(const row of state.entries)row.official=null;invalidateReceipt();renderData()});

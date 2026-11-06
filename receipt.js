@@ -52,7 +52,9 @@
         if (!quantity || !rate || !billed || !original) continue;
         const correction = corrections.reduce((a, b) => a + b, 0);
         if (Math.abs(Number(original) + correction - Number(billed)) > .011) continue;
-        rows.push({ kind: component ? 'hot' : found?.[0] || 'other', mode: 'quantity', quantity, rate, billed, correction: String(correction), rateBasis: '1', title: label.replace(/^.*?(?=Отопление)/, ''), unit: component && /энергию/.test(label) ? 'Гкал' : '', confidence: 'table' });
+        const printedUnit = ws.find(w => w.x < volume.x && /^(?:м[23³²]\.?|Гкал|кВт\/ч|кВт·ч)$/i.test(w.text))?.text || '';
+        const unit = /^м2/.test(printedUnit) ? 'м²' : /^м3/.test(printedUnit) ? 'м³' : printedUnit.replace('кВт/ч', 'кВт·ч');
+        rows.push({ kind: component ? 'hot' : found?.[0] || 'other', mode: 'quantity', quantity, rate, billed, correction: String(correction), rateBasis: '1', title: label.replace(/^.*?(?=Отопление)/, ''), unit, confidence: 'table' });
       }
     }
     return rows;
