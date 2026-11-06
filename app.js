@@ -9,7 +9,7 @@ function field(key, title, placeholder = '', value = '') {
 function add(data = {}) {
   const card = document.createElement('article');
   card.className = 'step service'; card.dataset.id = ++counter;
-  card.innerHTML = `<div class="row between"><h2>Услуга ${counter}</h2><button class="remove" aria-label="Удалить услугу ${counter}">Убрать</button></div><div class="grid"><label class="fld">Услуга<select data-key="kind">${Object.entries(kinds).map(([key, [name]]) => `<option value="${key}">${name}</option>`).join('')}</select></label><label class="fld">Как посчитать<select data-key="mode"><option value="quantity">Объем из квитанции × тариф</option><option value="meter">Разница показаний × тариф</option><option value="norm">Проживающие × норматив × тариф</option><option value="hot">Горячая вода: два компонента</option></select></label></div><div class="grid inputs"><div data-modes="quantity hot">${field('quantity', 'Объем, м³', 'Например, 8')}</div><div data-modes="meter">${field('previous', 'Предыдущие показания')}${field('current', 'Текущие показания')}</div><div data-modes="norm">${field('residents', 'Количество проживающих', '2')}${field('norm', 'Норматив на человека')}${field('coefficient', 'Коэффициент', '', '1')}</div><div>${field('rate', 'Тариф, ₽ за единицу', 'Из квитанции или официального источника')}</div><div data-modes="hot">${field('heatPerCube', 'Подогрев воды, Гкал на м³')}${field('heatRate', 'Тепловая энергия, ₽ за Гкал')}</div><div>${field('billed', 'Начислено за услугу, ₽', 'Необязательно')}</div></div><p class="method-note note"></p><div class="line-result" aria-live="polite"></div>`;
+  card.innerHTML = `<div class="row between"><h2>Услуга ${counter}</h2><button class="remove" aria-label="Удалить услугу ${counter}">Убрать</button></div><div class="grid"><label class="fld">Услуга<select data-key="kind">${Object.entries(kinds).map(([key, [name]]) => `<option value="${key}">${name}</option>`).join('')}</select></label><label class="fld">Как посчитать<select data-key="mode"><option value="quantity">Объем из квитанции × тариф</option><option value="meter">Разница показаний × тариф</option><option value="norm">Проживающие × норматив × тариф</option><option value="hot">Горячая вода: два компонента</option></select></label></div><div class="grid inputs"><div data-modes="quantity hot">${field('quantity', 'Объем, м³', 'Например, 8')}</div><div data-modes="meter">${field('previous', 'Предыдущие показания')}${field('current', 'Текущие показания')}</div><div data-modes="norm">${field('residents', 'Количество проживающих', '2')}${field('norm', 'Норматив на человека')}${field('coefficient', 'Коэффициент', '', '1')}</div><div>${field('rate', 'Тариф, ₽ за единицу', 'Из квитанции')}<label class="fld basis">Единица тарифа<select data-key="rateBasis"><option value="1">За 1 единицу</option><option value="1000">За 1000 единиц (газ)</option></select></label></div><div data-modes="hot">${field('heatPerCube', 'Подогрев воды, Гкал на м³')}${field('heatRate', 'Тепловая энергия, ₽ за Гкал')}</div><div>${field('billed', 'Начислено за услугу, ₽', 'Необязательно')}</div></div><p class="method-note note"></p><div class="line-result" aria-live="polite"></div>`;
   $('services').append(card);
   for (const [key, value] of Object.entries(data)) { const input = card.querySelector(`[data-key="${key}"]`); if (input) input.value = value; }
   card.querySelector('.remove').onclick = () => { card.remove(); render(); };
@@ -26,6 +26,9 @@ function configure(card) {
   const unit = kinds[row.kind][1];
   card.querySelector('[data-key="quantity"]').parentNode.firstChild.textContent = `Объем или площадь, ${row.mode === 'hot' ? 'м³' : unit}`;
   card.querySelector('[data-key="rate"]').parentNode.firstChild.textContent = row.mode === 'hot' ? 'Холодная вода, ₽ за м³' : `Тариф, ₽ за ${unit}`;
+  const basis = card.querySelector('[data-key=rateBasis]');
+  basis.parentElement.hidden = row.kind !== 'gas';
+  if (row.kind !== 'gas') basis.value = '1';
   const notes = [];
   if (row.mode === 'norm') notes.push('Этот режим для норматива на человека. Норматив на м² считайте через площадь × тариф × норматив, указав произведение площади и норматива как объем. Коэффициент укажите только при наличии основания.');
   if (row.kind === 'heat') notes.push('Расчет по введенному объему Гкал. Распределение тепла по дому и годовая корректировка здесь не проверяются.');
@@ -68,8 +71,8 @@ function render() {
 }
 $('add').onclick = () => add();
 $('period').oninput = render;
-$('reset').onclick = () => { $('services').replaceChildren(); $('demo').hidden = true; counter = 0; add(); };
-$('example').onclick = () => { $('services').replaceChildren(); counter = 0; $('demo').hidden = false; add({ quantity: '8', rate: '55', billed: '500' }); add({ kind: 'electricity', mode: 'meter', previous: '1250', current: '1430', rate: '6,50', billed: '1170' }); };
+$('reset').onclick = () => { $('cancel-upload').click(); clearReceipt(); $('services').replaceChildren(); $('demo').hidden = true; counter = 0; add(); };
+$('example').onclick = () => { showManual(); $('services').replaceChildren(); counter = 0; $('demo').hidden = false; add({ quantity: '8', rate: '55', billed: '500' }); add({ kind: 'electricity', mode: 'meter', previous: '1250', current: '1430', rate: '6,50', billed: '1170' }); };
 $('print').onclick = () => window.print();
 $('copy').onclick = async () => { try { await navigator.clipboard.writeText($('request').textContent); $('copy-status').textContent = 'Текст скопирован. Проверьте его перед отправкой.'; } catch { $('request-details').open = true; $('copy-status').textContent = 'Выделите и скопируйте текст ниже.'; } };
 $('theme').onclick = () => { const root = document.documentElement; const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; root.dataset.theme = dark ? 'light' : 'dark'; };
@@ -82,3 +85,17 @@ async function copyContact() {
 $('copy-contact').onclick = copyContact;
 $('telegram-contact').addEventListener('click', copyContact);
 add();
+
+function showManual() { setPanel(true); }
+function setPanel(manual) {
+  $('manual-panel').hidden = !manual; $('upload-panel').hidden = manual;
+  $('tab-manual').className = 'btn ' + (manual ? 'pri' : 'ghost');
+  $('tab-upload').className = 'btn ' + (manual ? 'ghost' : 'pri');
+  $('tab-manual').setAttribute('aria-pressed', String(manual));
+  $('tab-upload').setAttribute('aria-pressed', String(!manual));
+}
+$('tab-manual').onclick = showManual;
+$('tab-upload').onclick = () => setPanel(false);
+$('summary').textContent = 'Загрузите квитанцию или введите одну услугу.';
+$('comparison').textContent = 'Сравним объем × тариф с начислением за услугу.';
+$('warnings').textContent = 'Фото читается автоматически. Найденные цифры нужно подтвердить.';

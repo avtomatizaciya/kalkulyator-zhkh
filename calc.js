@@ -33,8 +33,11 @@
         formula = String(quantity);
       }
       const rate = number(row.rate, row.mode === 'hot' ? 'тариф на холодную воду' : 'тариф');
-      let total = quantity * rate;
+      const basis = String(row.rateBasis ?? '1');
+      if (!['1', '1000'].includes(basis)) throw new Error('Выберите единицу тарифа: за 1 или за 1000.');
+      let total = quantity * rate / Number(basis);
       formula += ' × ' + rate;
+      if (basis === '1000') formula += ' / 1000';
       if (row.mode === 'hot') {
         const heatPerCube = number(row.heatPerCube, 'расход тепла на подогрев кубометра');
         const heatRate = number(row.heatRate, 'тариф на тепловую энергию');
