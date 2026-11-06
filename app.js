@@ -101,6 +101,7 @@ function setPanel(manual) {
   $('tab-upload').className = 'btn ' + (manual ? 'ghost' : 'pri');
   $('tab-manual').setAttribute('aria-pressed', String(manual));
   $('tab-upload').setAttribute('aria-pressed', String(!manual));
+  if (!manual && !$('receipt-review').hidden && $('receipt-review').dataset.applied === 'false') showReceiptPending();
 }
 $('tab-manual').onclick = () => { showManual(); render(); };
 $('tab-upload').onclick = () => setPanel(false);

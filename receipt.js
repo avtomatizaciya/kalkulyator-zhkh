@@ -4,7 +4,7 @@
   const numbers = text => (text.match(/\d{1,3}(?:[ \u00a0]\d{3})*[,.]\d+|\d+[,.]\d+|\d+/g) || []).map(s => Number(s.replace(/\s/g, '').replace(',', '.')));
   function parse(text) {
     text = text.replace(/\u00a0/g, ' ');
-    const lines = text.split(/\n/).map(s => s.trim()).filter(Boolean), rows = [];
+    const rows = [];
     // A gas table has an explicit method row and a tariff per thousand cubic metres.
     // Never use the account-balance table or the total payable as a service charge.
     const gas = /поставка\s+природного\s+газа|газоснабжение/i.test(text);
@@ -17,7 +17,8 @@
         if (n.length >= 4 && n[2] === 1) rows.push({ kind: 'gas', mode: 'quantity', quantity: String(n[0]), rate: String(n[1]), rateBasis: '1000', billed: String(n[3]) });
       }
     }
-    if (!rows.length) for (const line of lines) {
+    const simple = text.split(/^\s*Услуга\s+Об[ъь]ем\s+Тариф\s+Начислено\s*$/im)[1]?.split(/^\s*(?:Итого|Всего|Сальдо|Справочная|Сведения)/im)[0] || '';
+    if (!rows.length) for (const line of simple.split(/\n/)) {
       if (/долг|аванс|пени|итого|всего|сальдо/i.test(line)) continue;
       const found = names.find(([, pattern]) => pattern.test(line));
       if (!found) continue;

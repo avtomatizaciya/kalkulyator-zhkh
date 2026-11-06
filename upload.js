@@ -10,13 +10,14 @@ function clearReceipt() {
   document.getElementById('receipt-text').textContent = '';
   document.getElementById('receipt-preview').replaceChildren();
   document.getElementById('receipt-review').hidden = true;
+  delete document.getElementById('receipt-review').dataset.applied;
   document.getElementById('upload-intake').hidden = false;
   document.getElementById('receipt-toolbar').hidden = true;
   uploadStatus('');
 }
 async function prepareImage(image) {
   const source = image instanceof Blob ? await createImageBitmap(image) : image;
-  const scale = Math.min(3, 3200 / Math.max(source.width, source.height));
+  const scale = Math.min(3, 2400 / Math.max(source.width, source.height));
   const canvas = document.createElement('canvas'); canvas.width = Math.round(source.width * scale); canvas.height = Math.round(source.height * scale);
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
@@ -62,6 +63,12 @@ function reviewRow(row) {
   const remove = document.createElement('button'); remove.className = 'remove'; remove.textContent = 'Убрать строку'; remove.onclick = () => card.remove(); card.append(remove);
   document.getElementById('receipt-preview').append(card);
 }
+function showReceiptPending() {
+  document.getElementById('totals').replaceChildren();
+  document.getElementById('summary').textContent = 'Сначала сверьте данные квитанции.';
+  document.getElementById('comparison').textContent = 'Результат появится после нажатия «Проверить эти данные».';
+  document.getElementById('warnings').textContent = 'Найденные цифры пока не включены в расчет.';
+}
 async function recognizeImage(image, job) {
   if (!window.Tesseract) await new Promise((resolve, reject) => {
     const script = document.createElement('script'); script.src = 'vendor/tesseract.js/tesseract.min.js';
@@ -74,12 +81,13 @@ async function recognizeImage(image, job) {
     logger: m => { if (job === receiptJob) uploadStatus(m.status === 'recognizing text' ? `Читаем квитанцию: ${Math.round(m.progress * 100)}%` : 'Подготавливаем распознавание на вашем устройстве…'); },
   });
   receiptWorker = worker;
+  let deadline;
   try {
     if (job !== receiptJob) throw new Error('Отменено');
     const canvas = await prepareImage(image);
     await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
-    const { data } = await worker.recognize(canvas); canvas.width = canvas.height = 0; return data.text;
-  } finally { await worker.terminate(); if (receiptWorker === worker) receiptWorker = null; }
+    const { data } = await Promise.race([worker.recognize(canvas), new Promise((resolve, reject) => { deadline = setTimeout(() => reject(new Error('Распознавание заняло слишком много времени. Попробуйте четкое фото только таблицы.')), 90000); })]); canvas.width = canvas.height = 0; return data.text;
+  } finally { clearTimeout(deadline); await worker.terminate(); if (receiptWorker === worker) receiptWorker = null; }
 }
 async function readPdf(file, job) {
   const pdfjs = await import('./vendor/pdfjs-dist/pdf.mjs');
@@ -131,6 +139,7 @@ document.getElementById('receipt-file').onchange = async event => {
     uploadStatus('Открываем файл на вашем устройстве…');
     const text = pdf ? await readPdf(file, job) : await recognizeImage(file, job);
     if (job !== receiptJob) return;
+    if (!text.trim()) throw new Error('В файле не найден читаемый текст. Попробуйте четкое фото таблицы или введите данные вручную.');
     const parsed = Receipt.parse(text); receiptRows = parsed.rows;
     document.getElementById('receipt-text').textContent = text;
     const preview = document.getElementById('receipt-preview'); preview.replaceChildren();
@@ -140,10 +149,8 @@ document.getElementById('receipt-file').onchange = async event => {
     document.getElementById('receipt-review').hidden = false;
     document.getElementById('upload-intake').hidden = true;
     document.getElementById('receipt-toolbar').hidden = false;
-    document.getElementById('totals').replaceChildren();
-    document.getElementById('summary').textContent = 'Сначала сверьте данные квитанции.';
-    document.getElementById('comparison').textContent = 'Результат появится после нажатия «Проверить эти данные».';
-    document.getElementById('warnings').textContent = 'Найденные цифры пока не включены в расчет.';
+    document.getElementById('receipt-review').dataset.applied = 'false';
+    showReceiptPending();
     document.getElementById('receipt-period').textContent = parsed.period ? 'Период в квитанции: ' + parsed.period : 'Период не найден. Укажите месяц вручную.';
     document.getElementById('receipt-review').dataset.period = parsed.period;
     uploadStatus(receiptRows.length ? `Найдено строк: ${receiptRows.length}. Проверьте поля ниже. Возможно, прочитаны не все услуги.` : 'Текст прочитан, но столбцы этой квитанции не удалось надежно разобрать. Откройте распознанный текст и перенесите объем, тариф и начисление вручную.');
@@ -162,6 +169,7 @@ document.getElementById('apply-receipt').onclick = () => {
   if (error) { uploadStatus('Проверьте выделенные поля: ' + error.error); return; }
   if (receiptRows.some(row => row.rateBasis === '1000' && row.kind !== 'gas')) { uploadStatus('Тариф за 1000 единиц в этой версии поддерживается для газа. Для другой услуги пересчитайте тариф за 1 единицу.'); return; }
   document.getElementById('services').replaceChildren(); counter = 0;
+  document.getElementById('receipt-review').dataset.applied = 'true';
   document.getElementById('demo').hidden = true;
   receiptRows.forEach(row => add(row)); receiptRows = [];
   const period = document.getElementById('receipt-review').dataset.period; if (period) document.getElementById('period').value = period;
