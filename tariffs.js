@@ -98,5 +98,5 @@
   }
   el('tariff-region').onchange = loadRegion; el('tariff-search').oninput = ()=>{resultPage=0;search()};
   el('region').onchange = ()=>{el('tariff-region').value=el('region').value;loadRegion()};
-  api.open = open; api.init = init; root.Tariffs = api;
+  api.regionForText = text => { const clean = value => norm(value).replace(/область/g,'обл').replace(/[.,]/g,'').replace(/\s+/g,' '); const found=(manifest?.regions||[]).filter(r=>clean(text).includes(clean(r.name))); return found.length===1?found[0].file:''; }; api.open = open; api.init = init; root.Tariffs = api;
 })(globalThis);
