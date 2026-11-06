@@ -113,6 +113,7 @@
   const regionCache = new Map();
   api.regionData = async file => {
     await init();
+    if(file?.startsWith('norm:'))throw new Error('В тарифной выгрузке этот регион отсутствует. Его нормативы доступны отдельно; тариф проверьте по своему первоисточнику.');
     if (!file || !manifest.regions.some(r => r.file === file)) throw new Error('Выберите регион');
     if (!regionCache.has(file)) {
       const response = await fetch('data/tariffs/' + file);
@@ -129,6 +130,13 @@
       try {
         const response = await fetch('data/tariffs/index.json'); if (!response.ok) throw new Error(); manifest = await response.json();
         for (const region of manifest.regions) for (const id of ['tariff-region','region']) { const option = document.createElement('option'); option.value = region.file; option.textContent = region.name; el(id).append(option); }
+        // Norms have additional regions that are absent from the tariff snapshot.
+        try {
+          const response=await fetch('data/norms/index.json');
+          if(response.ok)for(const region of (await response.json()).regions)if(!manifest.regions.some(r=>r.name.trim()===region.name.trim())){
+            const option=document.createElement('option');option.value='norm:'+region.file;option.textContent=region.name.trim();el('region').append(option);
+          }
+        }catch{ /* The tariff catalogue remains usable if the norms index is unavailable. */ }
         const link = document.createElement('a'); link.href = manifest.source; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Официальный архив ГИС ЖКХ';
         el('tariff-origin').replaceChildren(link, document.createTextNode(` от ${manifest.date}. В выгрузке ${manifest.regions.length} регионов. Загружается только выбранный регион.`));
       } catch { el('tariff-results').textContent = 'Не удалось загрузить справочник. Попробуйте позже или откройте официальный реестр в разделе помощи.'; throw new Error('tariff_catalog_unavailable'); }
@@ -140,6 +148,7 @@
     const dialog = el('tariff-dialog'); if (!dialog.open) dialog.showModal();
     el('tariff-month').value = el('period').value;
     try { await init(); } catch { return; }
+    if(el('region').value.startsWith('norm:')){el('tariff-results').textContent='В тарифной выгрузке этот регион отсутствует. Нормативы доступны в разделе «Нормативы и содержание», тариф пока укажите по своему первоисточнику.';return;}
     if (el('region').value !== el('tariff-region').value) { el('tariff-region').value = el('region').value; await loadRegion(); return; }
     search();
   }
@@ -183,6 +192,6 @@
     }
   }
   el('tariff-region').onchange = loadRegion; el('tariff-search').oninput = ()=>{resultPage=0;search()};
-  el('region').onchange = ()=>{el('tariff-region').value=el('region').value;loadRegion()};
-  api.regionForText = text => { const clean = value => norm(value).replace(/область/g,'обл').replace(/[.,]/g,'').replace(/\s+/g,' '); const found=(manifest?.regions||[]).filter(r=>clean(text).includes(clean(r.name))); return found.length===1?found[0].file:''; }; api.open = open; api.init = init; root.Tariffs = api;
+  el('region').onchange = ()=>{if(el('region').value.startsWith('norm:')){records=[];el('tariff-region').value='';document.dispatchEvent(new Event('tariff-region-change'));return;}el('tariff-region').value=el('region').value;loadRegion()};
+  api.regionForText = text => { const clean = value => norm(value).replace(/область/g,'обл').replace(/[.,]/g,'').replace(/\s+/g,' '); const found=[...el('region').options].filter(r=>r.value&&clean(text).includes(clean(r.textContent))); return found.length===1?found[0].value:''; }; api.open = open; api.init = init; root.Tariffs = api;
 })(globalThis);
