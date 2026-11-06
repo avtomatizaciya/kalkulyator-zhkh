@@ -95,7 +95,18 @@
     const found = candidates(data, row, context), prices = new Set(found.map(record => rate(record, row)));
     return { status: prices.size === 1 ? 'matched' : found.length ? 'ambiguous' : 'missing', record:prices.size === 1 ? found[0] : null, candidates:found };
   }
-  const api = { decode, effective, rate, active, candidates, match };
+  function mergeCorrections(data, corrections, region){
+    const additions=[];
+    const result=data.map(record=>{
+      const fix=(corrections.corrections||corrections.records||corrections).find(r=>r.region===region&&r.replacesPriceId===record.priceId);
+      if(!fix)return record;
+      additions.push({...record,...fix,id:record.id+'-correction',priceId:'correction-'+record.priceId,period:fix.from+' - '+fix.to});
+      const until=new Date(Date.parse(fix.from+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+      return {...record,period:record.period.slice(0,10)+' - '+until};
+    });
+    return [...result,...additions];
+  }
+  const api = { decode, effective, rate, active, candidates, match, mergeCorrections };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
   let manifest, records = [], target = null, loadVersion = 0, resultPage = 0;
   const el = id => document.getElementById(id);
@@ -106,11 +117,13 @@
     if (!regionCache.has(file)) {
       const response = await fetch('data/tariffs/' + file);
       if (!response.ok) throw new Error('Не удалось загрузить ставки региона. Повторите попытку.');
-      regionCache.set(file, decode(await response.json()));
+      const raw=decode(await response.json()),correctionResponse=await fetch('data/tariff-corrections.json');
+      if(!correctionResponse.ok)throw new Error('Не удалось загрузить уточнения официальных ставок.');
+      regionCache.set(file,mergeCorrections(raw,await correctionResponse.json(),manifest.regions.find(r=>r.file===file).name));
     }
     return regionCache.get(file);
   };
-  api.reference = (record, row, month) => ({...record, rate:rate(record,row), source:manifest.source, sourceDate:manifest.date, month});
+  api.reference = (record, row, month) => ({...record, rate:rate(record,row), source:record.sourceUrl||manifest.source, sourceDate:record.sourceDate||manifest.date, month});
   async function init() {
     if (!manifest) {
       try {
@@ -135,8 +148,7 @@
     if (!el('tariff-region').value) return;
     el('tariff-results').textContent = 'Загружаем ставки региона…';
     try {
-      const response = await fetch('data/tariffs/' + el('tariff-region').value); if (!response.ok) throw new Error();
-      const data = await response.json(); if (version !== loadVersion) return; records = decode(data); search();
+      const data = await api.regionData(el('tariff-region').value); if (version !== loadVersion) return; records = data; search();
     } catch { if (version === loadVersion) el('tariff-results').textContent = 'Не удалось загрузить ставки региона.'; }
   }
   function search() {
@@ -155,7 +167,7 @@
       const option = document.createElement('article'); option.className = 'tariff-option';
       const title = document.createElement('strong'); title.textContent = record.value + ' · ' + (record.component || record.kind); option.append(title);
       for (const text of [record.supplier, record.area, record.description, record.criteria, 'Общий срок тарифа: ' + record.period]) if (text) { const p = document.createElement('p'); p.textContent = text; option.append(p); }
-      const details = document.createElement('details'), caption = document.createElement('summary'), law = document.createElement('p'); caption.textContent = 'Основание и идентификатор в ГИС ЖКХ'; law.textContent = record.act + '\nТариф ' + record.id + ', ставка ' + record.priceId; details.append(caption, law); option.append(details);
+      const details = document.createElement('details'), caption = document.createElement('summary'), law = document.createElement('p'); caption.textContent = record.replacesPriceId?'Основание уточнения ставки':'Основание и идентификатор в ГИС ЖКХ'; law.textContent = record.act + (record.replacesPriceId?'\nУточнена исходная ставка ГИС '+record.replacesPriceId:'\nТариф ' + record.id + ', ставка ' + record.priceId); details.append(caption, law); option.append(details);
       const value = rate(record, row), button = document.createElement('button'); button.className = 'btn ghost'; button.disabled = value === null;
       button.textContent = value === null ? 'Не совпала единица измерения' : 'Это моя ставка и категория - применить';
       button.onclick = () => {
@@ -163,8 +175,8 @@
         if (!target) { el('tariff-dialog').close(); return; }
         for (const card of document.querySelectorAll('.review-row')) if (card.dataset.official && JSON.parse(card.dataset.official).month !== month) { delete card.dataset.official; card.querySelector('.tariff-choose').textContent = 'Выбрать тариф'; updateReceiptRow(card); }
         el('receipt-review').dataset.period = month; el('receipt-period').textContent = 'Месяц проверки: ' + month;
-        target.dataset.official = JSON.stringify({ ...record, rate: value, source: manifest.source, sourceDate: manifest.date, month });
-        const choose = target.querySelector('.tariff-choose'); choose.textContent = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6 }).format(value) + ' ₽ · ГИС'; choose.title = record.description + ' · ' + record.supplier;
+        target.dataset.official = JSON.stringify(api.reference(record,row,month));
+        const choose = target.querySelector('.tariff-choose'); choose.textContent = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6 }).format(value) + ' ₽ · источник'; choose.title = record.description + ' · ' + record.supplier;
         invalidateReceipt(); updateReceiptRow(target); el('tariff-dialog').close();
       };
       option.append(button); host.append(option);

@@ -71,7 +71,7 @@
       const match = part.match(/Узел\s*[\dОO]+\s+Норматив\s+([\s\S]+)/i);
       if (match) {
         const n = numbers(match[1]);
-        if (n.length >= 4 && n[2] === 1) rows.push({ kind: 'gas', mode: 'quantity', quantity: String(n[0]), rate: String(n[1]), rateBasis: '1000', billed: String(n[3]) });
+        if (n.length >= 4 && n[2] === 1) rows.push({ kind: 'gas', mode: 'quantity', method:'normative', quantity: String(n[0]), rate: String(n[1]), rateBasis: '1000', billed: String(n[3]) });
       }
     }
     const simple = text.split(/^\s*Услуга\s+Об[ъь]ем\s+Тариф\s+Начислено\s*$/im)[1]?.split(/^\s*(?:Итого|Всего|Сальдо|Справочная|Сведения)/im)[0] || '';

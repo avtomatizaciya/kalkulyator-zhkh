@@ -1,6 +1,7 @@
 (function (root) {
   'use strict';
   const Calc = typeof module !== 'undefined' && module.exports ? require('./calc.js') : root.Zhkh;
+  const Grounds = typeof module !== 'undefined' && module.exports ? require('./grounds.js') : root.ChargeGrounds;
   const amount = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(value);
   function facts(text) {
     const result = { area: null, penalties: null };
@@ -17,11 +18,13 @@
   }
   function check(entries, invoices, profile, period) {
     const rows = entries.filter(r => r.enabled && r.period === period), docs = invoices.filter(d => d.period === period);
+    let normCount=0,maintenanceCount=0;
     const checks = []; let expected = 0, billed = 0, difference = 0, valid = 0, officialCount = 0, officialDifference = 0;
     const add = (type, title, detail, action = 'data') => checks.push({type,title,detail,action});
     const unread = docs.filter(d => !entries.some(r => r.sourceId === d.id));
     if (unread.length) add('missing', `Не удалось распределить ${unread.length} квитанций`, 'Текст сохранен в разделе квитанций. Внесите недостающие услуги вручную; автоматически прочитанные документы сохранены.', 'documents');
     for (const row of rows) {
+      const grounds=Grounds.inspect(row,period);checks.push(...grounds.checks);normCount+=Number(grounds.normChecked);maintenanceCount+=Number(grounds.maintenanceChecked);
       const result = Calc.calculate(row);
       if (!result.ok) { add('missing', row.title + ': не хватает данных', result.error); continue; }
       valid++; expected += result.expected;
@@ -39,7 +42,8 @@
     if (valid && !difference && !checks.some(c => c.type === 'warning')) add('ok', 'Арифметика заполненных строк совпала', 'Долги, пени и неподтвержденные услуги в эту проверку не включены.');
     const eligible=rows.filter(r=>!['maintenance','capital','other'].includes(r.kind)).length;
     if (officialCount < eligible) add('missing', `Ставки ГИС: проверено ${officialCount} из ${eligible} коммунальных услуг`, 'Укажите поставщиков и условия один раз для всех услуг. Неизвестные условия не позволяют подтвердить тариф.', 'tariff');
-    if(rows.some(r=>['maintenance','capital','other'].includes(r.kind)))add('missing','Содержание жилья и другие отдельные основания','Эти начисления не подтверждены реестром коммунальных тарифов. Нужны решение собственников, договор или отдельный региональный акт.', 'consult');
+    if(rows.some(r=>r.kind==='maintenance'&&!r.grounds))add('missing','Проверьте основание платы за содержание','Выберите муниципальную ставку, если она применима, либо ставку из решения собственников или договора. Отдельные компоненты СОИ проверяются отдельно.', 'grounds');
+    if(rows.some(r=>['capital','other'].includes(r.kind)))add('missing','Другие отдельные основания','Капремонт и другие услуги требуют соответствующего акта, договора или решения.', 'consult');
     if (docs.some(d => d.assumedPeriod)) add('missing', 'Уточните месяц квитанций', 'В части файлов месяц не распознан. Подтвердите его перед сравнением периодов.', 'documents');
     const areas = docs.filter(d => d.facts?.area !== null && d.facts?.area !== undefined).map(d => ({value:d.facts.area,name:d.name}));
     for (const row of rows) if (['maintenance','capital'].includes(row.kind) && row.mode !== 'norm' && row.unit === 'м²' && Number(row.quantity) > 0) areas.push({value:Number(row.quantity),name:row.title});
@@ -58,7 +62,7 @@
     if (profile.meter === 'no') add('advice','Проверьте, выгодны ли счетчики воды','Уточните возможность и стоимость установки. Для оценки экономии нужен ожидаемый фактический расход; по одной сумме квитанции экономию обещать нельзя.', 'profile');
     if (profile.transfer === 'no') add('advice','Проверьте прием последних показаний','Пропуски могут менять способ начисления на средний расход или норматив. Передайте показания и уточните необходимость контрольного снятия и перерасчета.', 'consult');
     if (profile.verification === 'expired') add('advice','Истек срок поверки счетчика воды','Уточните сведения во ФГИС «Аршин», возможность поверки или замены и порядок возобновления учета.', 'consult');
-    if (rows.some(r => r.method === 'normative' || r.mode === 'norm')) add('missing','Проверка норматива требует его источника','Нужны норматив именно для вашего региона, типа помещения, состава оборудования и периода, а также число проживающих или площадь.', 'norm');
+    if (rows.some(r => (r.method === 'normative' || r.mode === 'norm')&&!r.grounds)) add('missing','Сверьте объем с официальным нормативом','Выберите источник для региона, оборудования, периода и укажите подтвержденных жителей или площадь.', 'grounds');
     const previous = [...new Set(entries.filter(r=>r.enabled && r.period<period).map(r=>r.period))].sort().at(-1);
     if (previous && profile.sameHome && !docs.some(d=>d.assumedPeriod)) for (const kind of ['cold','hot','electricity','gas']) {
       const now = rows.filter(r=>r.kind===kind), old = entries.filter(r=>r.enabled && r.period===previous && r.kind===kind);
@@ -67,7 +71,7 @@
       if (a.ok && b.ok && b.quantity>0 && a.quantity/b.quantity>1.4) add('advice',now[0].title+': вырос расход',`По сравнению с ${previous} расход выше на ${amount((a.quantity/b.quantity-1)*100)}%. Проверьте длину периода, показания, число проживающих и возможные утечки. Рост сам по себе не означает ошибку.`,'history');
     }
     const priority = {warning:0,missing:1,advice:2,ok:3}; checks.sort((a,b)=>priority[a.type]-priority[b.type]);
-    return {rows:rows.length,valid,expected,billed,difference,officialCount,officialDifference,checks,previous};
+    return {normCount,maintenanceCount,rows:rows.length,valid,expected,billed,difference,officialCount,officialDifference,checks,previous};
   }
   const api = {facts,check}; if (typeof module !== 'undefined' && module.exports) module.exports=api; else root.ReceiptAnalysis=api;
 })(globalThis);

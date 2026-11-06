@@ -42,7 +42,7 @@ $('batch-form').onsubmit=event=>{
   for(const row of rows){
     row.official=null;const result=splitElectricity&&row.kind==='electricity'?{status:'missing'}:Tariffs.match(batchRecords,row,context);row.gisStatus=result.status;
     if(result.status!=='separate')eligible++;
-    if(result.status==='matched'){row.official=Tariffs.reference(result.record,row,period());matched++;}
+    if(result.status==='matched'){row.official={...Tariffs.reference(result.record,row,period()),context:{...context}};matched++;}
   }
   $('batch-dialog').close();invalidateReceipt();renderAll();switchView('result');
   $('gis-status').textContent=`По условиям найдены ставки для ${matched} из ${eligible} коммунальных услуг. ${matched<eligible?'Для остальных уточните условия или выберите ставку вручную.':'Проверьте источники и распознанные цифры.'} ${splitElectricity?'Электричество разбито на несколько строк: выберите зону и диапазон каждой строки вручную. ':''}Содержание жилья и капремонт проверяются по отдельным основаниям.`;

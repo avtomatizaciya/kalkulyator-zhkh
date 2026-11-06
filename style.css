@@ -16,3 +16,6 @@
 @media(max-width:680px){.receipt-table td:nth-child(7),.receipt-table td:nth-child(9),.receipt-table td:nth-child(10){display:block!important}.receipt-table td:nth-child(7)::before{content:"Тариф ГИС ЖКХ"}.receipt-table td:nth-child(9)::before{content:"Разница по ГИС"}}
 
 @media(max-width:680px){.gis-callout{padding:12px;margin:10px 0}.gis-callout strong{font-size:16px}.gis-callout p{font-size:13px;line-height:1.35}.gis-callout .btn{margin-top:8px}}
+
+#grounds-dialog{width:calc(100% - 32px);max-width:900px}#grounds-dialog .fld{margin:10px 0}#grounds-source{width:100%;text-overflow:ellipsis}#grounds-reference{font-size:14px;line-height:1.5}#grounds-dialog .checkbox-line{margin:12px 0;align-items:start}.gis-callout{flex-wrap:wrap}.gis-callout>div{flex:1 1 420px}.gis-callout>.btn{flex:0 1 auto}.data-actions{flex-wrap:wrap}@media(max-width:680px){.gis-callout>.btn{width:100%}}
+@media(max-width:680px){.gis-callout{display:grid;grid-template-columns:1fr 1fr;gap:10px}.gis-callout>div{grid-column:1/-1}.gis-callout>.btn{margin:0;font-size:12px;padding:9px 7px;min-height:42px}.data-actions{gap:6px}.data-actions .btn{font-size:12px;padding:8px}}
