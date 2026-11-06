@@ -37,14 +37,15 @@
     const pattern = patterns[row.kind];
     if (!pattern || !context.city) return [];
     const city = norm(context.city).replace(/^г[. ]+/, '').replace(/ь$/, ''), supplier = context[row.kind === 'cold' || row.kind === 'sewage' ? 'waterSupplier' : row.kind === 'hot' || row.kind === 'heat' ? 'heatSupplier' : 'gasSupplier'];
+    const cityWord = new RegExp('(^|[^а-яa-z])' + city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:ь|я|е|ю|а|ом)?(?=$|[^а-яa-z])', 'i');
     const found = active(data, context.month).filter(record => {
       const description = norm(record.description), kind = norm(record.kind), all = norm([record.title, record.area, record.description, record.criteria].join(' '));
       if (!pattern.test(kind) || /транспортиров/.test(kind) || rate(record, row) === null) return false;
       if (row.kind === 'cold' && /горяч/.test(kind) || row.kind === 'heat' && /горяч/.test(kind)) return false;
       if (/без\s+(?:учета\s+)?(?:ндс|налога на добавленную)/.test(description)) return false;
       const broad = /муниципальные образования.*(?:области|края|республики)|вся территория|территория.*субъекта/.test(norm(record.area));
-      if (!all.includes(city) && !broad) return false;
-      if (/муниципальн.*(?:район|округ)/.test(description) && !description.includes(city)) return false;
+      if (!cityWord.test(all) && !broad) return false;
+      if (/муниципальн.*(?:район|округ)/.test(description) && !cityWord.test(description)) return false;
       if (row.kind !== 'electricity') {
         if (!supplier || record.supplier !== supplier) return false;
         if (!/населени|с\s+(?:учетом\s+)?(?:ндс|налогом)|ндс не облагается/.test(description + ' ' + kind)) return false;
