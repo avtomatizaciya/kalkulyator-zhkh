@@ -73,4 +73,12 @@ $('example').onclick = () => { $('services').replaceChildren(); counter = 0; $('
 $('print').onclick = () => window.print();
 $('copy').onclick = async () => { try { await navigator.clipboard.writeText($('request').textContent); $('copy-status').textContent = 'Текст скопирован. Проверьте его перед отправкой.'; } catch { $('request-details').open = true; $('copy-status').textContent = 'Выделите и скопируйте текст ниже.'; } };
 $('theme').onclick = () => { const root = document.documentElement; const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; root.dataset.theme = dark ? 'light' : 'dark'; };
+const contactText = $('contact-text').textContent.trim();
+$('telegram-contact').href = 'https://t.me/pyankov_vv?text=' + encodeURIComponent(contactText);
+async function copyContact() {
+  try { await navigator.clipboard.writeText(contactText); $('contact-status').textContent = 'Текст скопирован. Если в Telegram поле пустое, вставьте его и допишите вопрос.'; }
+  catch { $('contact-draft').open = true; $('contact-status').textContent = 'Скопируйте текст из блока ниже и вставьте в Telegram.'; }
+}
+$('copy-contact').onclick = copyContact;
+$('telegram-contact').addEventListener('click', copyContact);
 add();
