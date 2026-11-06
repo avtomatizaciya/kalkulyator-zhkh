@@ -13,3 +13,5 @@ details{margin-top:12px}details>summary{color:var(--brand);cursor:pointer;font-w
 @media print{.hero{padding:0}.topline,.tabs,.toolbar,#upload-panel,#add,.remove,.support-blocks,footer,.result-actions,.help-link{display:none!important}.workspace{display:block}.result{position:static}.step{box-shadow:none;break-inside:avoid}.wrap{padding:0}body{background:white;color:black}#manual-panel[hidden]{display:block!important}}
 
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .upload-icon img{filter:brightness(1.8)}}:root[data-theme=dark] .upload-icon img{filter:brightness(1.8)}
+
+.review-title{grid-column:1/-1;font-size:14px;font-weight:600;color:var(--ink)}

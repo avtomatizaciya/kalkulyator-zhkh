@@ -8,8 +8,12 @@
     return result;
   }
   function cents(value) {
-    if (!Number.isFinite(value) || value > 1e12) throw new Error('Результат слишком большой. Проверьте введенные значения.');
-    return Math.round((value + Number.EPSILON * Math.max(1, value)) * 100);
+    if (!Number.isFinite(value) || Math.abs(value) > 1e12) throw new Error('Результат слишком большой. Проверьте введенные значения.');
+    return Math.sign(value) * Math.round((Math.abs(value) + Number.EPSILON * Math.max(1, Math.abs(value))) * 100);
+  }
+  function signed(value, name) {
+    const text = String(value ?? '').trim().replace('−', '-');
+    return (text.startsWith('-') ? -1 : 1) * number(text.replace(/^-/, ''), name);
   }
   function calculate(row) {
     try {
@@ -44,8 +48,13 @@
         total += quantity * heatPerCube * heatRate;
         formula += ' + ' + quantity + ' × ' + heatPerCube + ' × ' + heatRate;
       }
-      const expected = cents(total);
-      const billed = String(row.billed ?? '').trim() === '' ? null : cents(number(row.billed, 'начисление из квитанции'));
+      const factor = String(row.factor ?? '').trim() === '' ? 1 : number(row.factor, 'повышающий коэффициент');
+      if (factor <= 0) throw new Error('Коэффициент должен быть больше нуля.');
+      if (factor !== 1) { total *= factor; formula = '(' + formula + ') × ' + factor; }
+      const correction = String(row.correction ?? '').trim() === '' ? 0 : signed(row.correction, 'перерасчет');
+      const expected = cents(total) + cents(correction);
+      if (correction) formula += (correction < 0 ? ' − ' : ' + ') + Math.abs(correction);
+      const billed = String(row.billed ?? '').trim() === '' ? null : cents(signed(row.billed, 'начисление из квитанции'));
       return { ok: true, quantity, expected, billed, difference: billed === null ? null : billed - expected, formula };
     } catch (error) { return { ok: false, error: error.message }; }
   }
