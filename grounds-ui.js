@@ -68,4 +68,4 @@ $('grounds-form').onsubmit=event=>{
   $('grounds-dialog').close();invalidateReceipt();switchView('result');
 };
 $('grounds-row').onchange=updateGroundsRow;$('grounds-source').onchange=updateGroundsSource;
-for(const id of ['grounds-check','grounds-check-data'])$(id).onclick=openGrounds;
+$('grounds-check').onclick=()=>{$('conditions-dialog').close();openGrounds();};

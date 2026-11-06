@@ -47,7 +47,7 @@ $('batch-form').onsubmit=event=>{
   $('batch-dialog').close();invalidateReceipt();renderAll();switchView('result');
   $('gis-status').textContent=`По условиям найдены ставки для ${matched} из ${eligible} коммунальных услуг. ${matched<eligible?'Для остальных уточните условия или выберите ставку вручную.':'Проверьте источники и распознанные цифры.'} ${splitElectricity?'Электричество разбито на несколько строк: выберите зону и диапазон каждой строки вручную. ':''}Содержание жилья и капремонт проверяются по отдельным основаниям.`;
 };
-for(const id of ['gis-check','gis-check-result'])$(id).onclick=openBatch;
+$('gis-check').onclick=()=>{$('conditions-dialog').close();openBatch();};
 document.addEventListener('tariff-region-change',()=>{batchContext={};$('gis-status').textContent='Выберите условия, чтобы сравнить начисления с официальными ставками.';});
 
 document.addEventListener('receipt-clear',()=>{batchContext={};$('gis-status').textContent='Один раз укажите поставщиков и условия для всех услуг месяца.';});
