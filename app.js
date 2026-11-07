@@ -23,7 +23,84 @@ function renderResult(){const r=analysis(),warnings=r.checks.filter(c=>c.type===
 function renderDocuments(){$('document-count').textContent=state.invoices.length;$('document-count').hidden=!state.invoices.length;state.docsPage=pager('docs',state.docsPage,state.invoices.length,4,p=>{state.docsPage=p;renderDocuments()});$('documents').replaceChildren();for(const doc of state.invoices.slice(state.docsPage*4,state.docsPage*4+4)){const card=node('article',undefined,'document-row'),label=node('label',doc.assumedPeriod?'Подтвердите месяц':'Месяц'),input=document.createElement('input');input.type='month';input.value=doc.period;input.onchange=()=>{if(!input.value)return;doc.period=input.value;doc.assumedPeriod=false;for(const row of state.entries.filter(r=>r.sourceId===doc.id)){row.period=doc.period;row.official=null;row.grounds=null}setPeriod(doc.period)};label.append(input);const text=node('button','Текст','text-button');text.onclick=()=>{$('receipt-text').textContent=doc.text;$('text-dialog').showModal()};const remove=node('button','Удалить','text-button');remove.onclick=()=>{state.invoices=state.invoices.filter(d=>d.id!==doc.id);state.entries=state.entries.filter(r=>r.sourceId!==doc.id);invalidateReceipt();renderAll()};card.append(node('strong',doc.name),node('span',`Строк: ${state.entries.filter(r=>r.sourceId===doc.id).length}`),label,text,remove);$('documents').append(card)}if(!state.invoices.length)$('documents').append(node('p','Можно загрузить квитанции разных поставщиков и за другие месяцы.','note'))}
 function setPeriod(value){$('period').value=value;$('receipt-review').dataset.period=value;state.dataPage=0;state.checksPage=0;renderAll()}
 function renderAll(){ensureManualRows();renderData();renderDocuments();renderResult()}
-async function importFiles(files){if(!files.length)return;if(state.demo){state.entries=[];state.demo=false;}const job=++receiptJob;let added=0,duplicates=0;const errors=[];$('cancel-upload').hidden=false;$('receipt-file').disabled=true;try{for(const[index,file]of [...files].slice(0,10).entries()){if(job!==receiptJob)break;try{uploadStatus(`Файл ${index+1} из ${Math.min(files.length,10)}: выберите таблицу начислений`);if(file.size>15*1024*1024)throw new Error('больше 15 МБ');const pdf=file.type==='application/pdf'||/\.pdf$/i.test(file.name);if(!pdf&&!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('нужен JPG, PNG, WebP или PDF');const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer()),id=Array.from(new Uint8Array(digest)).map(v=>v.toString(16).padStart(2,'0')).join('');if(state.invoices.some(d=>d.id===id)){duplicates++;continue}const read=pdf?await readPdf(file,job):await readPhoto(file,job);if(job!==receiptJob)break;if(read.skipped)continue;if(!read.text.trim())throw new Error('нет читаемого текста');const parsed=Receipt.parse(read.text,read.pages),month=read.period||parsed.period||period();state.invoices.push({id,name:'Квитанция '+(state.invoices.length+1)+(pdf?' · PDF':' · фото'),period:month,assumedPeriod:Boolean(read.period&&parsed.period&&read.period!==parsed.period)||(!read.period&&!parsed.period),text:read.text,facts:ReceiptAnalysis.facts(read.text)});for(const row of parsed.rows)state.entries.push(newEntry({...row,sourceId:id,period:month,enabled:true}));added++;state.confirmed=false;const suggestedRegion=Tariffs.regionForText(read.text);if(suggestedRegion&&!$('region').value){$('region').value=suggestedRegion;$('region').dispatchEvent(new Event('change'));}setPeriod(month)}catch(error){if(job!==receiptJob)break;errors.push('Файл '+(index+1)+': '+error.message)}}}finally{$('receipt-file').disabled=false;$('receipt-file').value='';$('cancel-upload').hidden=true;renderAll();if(added&&state.invoices.length){setPeriod(state.invoices.map(d=>d.period).sort().at(-1));switchView('result');}uploadStatus(`Добавлено: ${added}. Повторных файлов: ${duplicates}.`+(errors.length?' Не прочитано: '+errors.join('; '):'')+(files.length>10?' За раз читаем первые 10 файлов. Остальные добавьте следующей загрузкой.':''))}}
+async function importFiles(files) {
+  if (!files.length || $('receipt-file').disabled) return;
+  const job = ++receiptJob;
+  let added = 0, duplicates = 0, skipped = 0;
+  const noRows = [], errors = [];
+  const selected = [...files].slice(0, 10);
+  $('cancel-upload').hidden = false;
+  $('receipt-file').disabled = true;
+  try {
+    for (const [index, file] of selected.entries()) {
+      if (job !== receiptJob) break;
+      const fileNumber = index + 1;
+      try {
+        uploadStatus(`Файл ${fileNumber} из ${selected.length}. Выберите таблицу начислений`);
+        if (file.size > 15 * 1024 * 1024) throw new Error('больше 15 МБ');
+        const pdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+        if (!pdf && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('нужен JPG, PNG, WebP или PDF');
+        const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        const id = Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+        if (job !== receiptJob) break;
+        if (state.invoices.some(d => d.id === id)) { duplicates++; continue; }
+        const read = pdf ? await readPdf(file, job) : await readPhoto(file, job);
+        if (job !== receiptJob) break;
+        if (read.skipped) { skipped++; continue; }
+        if (!read.text.trim()) throw new Error('нет читаемого текста');
+        const parsed = Receipt.parse(read.text, read.pages);
+        if (!parsed.rows.length) {
+          noRows.push(fileNumber);
+          continue;
+        }
+        if (state.demo) {
+          state.entries = [];
+          state.demo = false;
+        }
+        const month = read.period || parsed.period || period();
+        const assumedPeriod = Boolean(read.period && parsed.period && read.period !== parsed.period) || (!read.period && !parsed.period);
+        state.invoices.push({id, name: 'Квитанция ' + (state.invoices.length + 1) + (pdf ? ' · PDF' : ' · фото'), period: month, assumedPeriod, text: read.text, facts: ReceiptAnalysis.facts(read.text)});
+        for (const row of parsed.rows) state.entries.push(newEntry({...row, sourceId: id, period: month, enabled: true}));
+        added++;
+        state.confirmed = false;
+        const suggestedRegion = Tariffs.regionForText(read.text);
+        if (suggestedRegion && !$('region').value) {
+          $('region').value = suggestedRegion;
+          $('region').dispatchEvent(new Event('change'));
+        }
+        setPeriod(month);
+      } catch (error) {
+        if (job !== receiptJob) break;
+        errors.push(`Файл ${fileNumber}: ${error.message}`);
+      }
+    }
+  } finally {
+    $('receipt-file').disabled = false;
+    $('receipt-file').value = '';
+    $('cancel-upload').hidden = true;
+    if (job === receiptJob) {
+      renderAll();
+      if (added) {
+        setPeriod(state.invoices.map(d => d.period).sort().at(-1));
+        switchView('result');
+      }
+      const status = [];
+      if (added) status.push(`Добавлено: ${added}.`);
+      if (noRows.length) status.push(`Не найдены строки начислений в файлах № ${noRows.join(', ')}. Текст прочитан. Выберите квитанцию заново и выделите заголовки столбцов вместе со строками начислений.`);
+      if (errors.length) status.push('Не прочитано. ' + errors.join('. ') + '.');
+      if (duplicates) status.push(`Повторных файлов: ${duplicates}.`);
+      if (skipped) status.push(`Пропущено: ${skipped}.`);
+      if (files.length > selected.length) status.push('За раз читаем первые 10 файлов. Остальные добавьте следующей загрузкой.');
+      uploadStatus(status.join(' '));
+      if (noRows.length) {
+        const retry = node('button', 'Выбрать квитанцию заново', 'text-button');
+        retry.type = 'button';
+        retry.onclick = () => $('receipt-file').click();
+        $('upload-status').append(' ', retry);
+      }
+    }
+  }
+}
 $('receipt-file').onchange=e=>importFiles(e.target.files);$('upload-more').onclick=()=>$('receipt-file').click();$('manual-start').onclick=()=>switchView('data');$('cancel-upload').onclick=()=>{receiptJob++;ReceiptCrop.cancel();if(receiptWorker){receiptWorker.terminate();receiptWorker=null}uploadStatus('Чтение отменено. Уже добавленные квитанции сохранены.')};
 for(const button of document.querySelectorAll('[data-view]'))button.onclick=()=>switchView(button.dataset.view);
 $('period').onchange=()=>{if(period())setPeriod(period())};$('confirm-data').onclick=()=>{state.confirmed=true;$('receipt-review').dataset.applied='true';renderResult()};$('add-row').onclick=()=>{state.entries.push(newEntry({kind:'other',title:'Другая услуга',unit:'ед.',enabled:true}));state.dataPage=Math.floor((displayedEntries().length-1)/(innerWidth<=680?4:9));renderData()};
