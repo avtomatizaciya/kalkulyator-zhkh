@@ -158,7 +158,7 @@ async function readPdf(file, job, queue=null) {
   const pdfjs = await import('./vendor/pdfjs-dist/pdf.mjs');
   pdfjs.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs-dist/pdf.worker.mjs';
   const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, useSystemFonts: true });
-  const pages=[],geometry=[],previews=[],pending=[];let month='';
+  const pages=[],geometry=[],previews=[],pending=[],metadata=[];let month='';
   try {
     const pdf=await task.promise;
     if(pdf.numPages>5)throw new Error('В PDF больше 5 страниц. Выберите отдельную квитанцию до 5 страниц.');
@@ -166,6 +166,7 @@ async function readPdf(file, job, queue=null) {
       if(job!==receiptJob)throw new Error('Отменено');
       uploadStatus(`Готовим PDF: страница ${i} из ${pdf.numPages}. Выделите таблицу без личных реквизитов.`);
       const page=await pdf.getPage(i),base=page.getViewport({scale:1}),viewport=page.getViewport({scale:Math.min(6,4800/Math.max(base.width,base.height))});
+      const content=await page.getTextContent();metadata.push(ReceiptContext.extract(content.items.map(item=>item.str).join(' ')));
       const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
       try {
         await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
@@ -176,10 +177,10 @@ async function readPdf(file, job, queue=null) {
       } finally { canvas.width=canvas.height=0;page.cleanup(); }
     }
     if(queue&&pending.length){
-      const result=Promise.all(pending).then(reads=>({previews:reads.flatMap(r=>r.previews),text:reads.map(r=>r.text).join('\n'),pages:reads.flatMap(r=>r.pages),period:month,skipped:false}));
+      const result=Promise.all(pending).then(reads=>({metadata,previews:reads.flatMap(r=>r.previews),text:reads.map(r=>r.text).join('\n'),pages:reads.flatMap(r=>r.pages),period:month,skipped:false}));
       result.catch(()=>{});return {pending:result};
     }
-    return {previews,text:pages.join('\n'),pages:geometry,period:month,skipped:!pages.length};
+    return {metadata,previews,text:pages.join('\n'),pages:geometry,period:month,skipped:!pages.length};
   } finally { await task.destroy(); }
 }
 

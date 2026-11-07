@@ -1,6 +1,6 @@
 'use strict';
 // Conditions are confirmed once. Invoice prices never select an official rate.
-let batchRecords=[], batchContext={};
+let batchRecords=[], batchContext={}, batchSuggestions={};
 const batchFields=[['city','Город / населенный пункт','text'],['waterSupplier','Поставщик холодной воды и водоотведения','provider'],['heatSupplier','Поставщик тепла и горячей воды','provider'],['gasSupplier','Поставщик газа','provider'],['heatSupply','Получение тепла',[['','Не знаю'],['network','Через тепловую сеть']]],['hotSystem','Система горячей воды',[['','Не знаю'],['open','Открытая'],['closed','Закрытая']]],['gasUse','Использование газа',[['','Не знаю'],['cooking','Только газовая плита'],['heater','Плита и газовый водонагреватель'],['heating','Газовое отопление']]],['electricCategory','Категория электричества',[['','Не знаю'],['ordinary','Город, без льготы за электроплиту'],['electricStove','Стационарная электроплита'],['rural','Сельское население']]],['electricBand','Диапазон потребления',[['','Не знаю'],['1','Первый'],['2','Второй'],['3','Третий']]],['electricZone','Зона электричества',[['','Не знаю'],['single','Одноставочный тариф'],['day','День (две зоны)'],['night','Ночь (две зоны)']]]];
 
 let batchVersion=0,batchTimer,batchMissing=[],batchNotice="";
@@ -20,9 +20,12 @@ function batchNames(key,month){return [...new Set(batchRecords.filter(r=>Tariffs
 function rememberKnownSuppliers(month){
   const chosen=$('entry-supplier').value.trim().toLowerCase();
   const text=state.invoices.filter(d=>d.period===month).map(d=>d.text).join(' ').toLowerCase();
+  const metadata=state.invoices.filter(d=>d.period===month).flatMap(d=>d.metadata||[ReceiptContext.extract(d.text)]);
+  for(const key of ['city','gasUse']){const values=[...new Set(metadata.map(m=>m[key]).filter(Boolean))];if(!batchContext[key]&&values.length===1)batchContext[key]=values[0];}
   for(const key of Object.keys(supplierKinds)){
     if(batchContext[key])continue;
-    const found=batchNames(key,month).filter(name=>name.toLowerCase()===chosen||text.includes(name.toLowerCase()));
+    const role={waterSupplier:/водоканал|водоснаб/i,heatSupplier:/тгк|генерир|тепл/i,gasSupplier:/газ/i}[key];
+    const found=batchNames(key,month).filter(name=>name.toLowerCase()===chosen||text.includes(name.toLowerCase())||metadata.some(m=>m.companies.some(c=>role.test(c)&&ReceiptContext.supplierMatches(name,c))));
     if(found.length===1)batchContext[key]=found[0];
   }
 }
@@ -36,16 +39,19 @@ async function automaticTariffs(){
     const records=await Tariffs.regionData(file);
     if(version!==batchVersion||file!==$('region').value||month!==period())return;
     batchRecords=records;rememberKnownSuppliers(month);
+    batchSuggestions=ReceiptContext.suggest(rows,batchContext,records,month);
     batchMissing=batchNeeded(rows).filter(([key])=>!batchContext[key]);
     const context={...batchContext,month},splitElectricity=rows.filter(r=>r.kind==='electricity').length>1;
     let matched=0,eligible=0;const unresolved=[];
     for(const row of rows){
+      row.suggested=null;
       // Preserve a separately chosen official reference; only replace automatic matches.
       if(row.official&&!row.official.automatic&&row.official.month===month)continue;
       row.official=null;
       const result=row.mode==='hot'||splitElectricity&&row.kind==='electricity'?{status:'missing'}:Tariffs.match(records,row,context);
       row.gisStatus=result.status;if(result.status!=='separate'){eligible++;if(result.status!=='matched')unresolved.push(row);}
       if(result.status==='matched'){row.official={...Tariffs.reference(result.record,row,month),context:{...context},automatic:true};matched++;}
+      else if(result.status!=='separate'&&row.mode!=='hot'&&!(splitElectricity&&row.kind==='electricity')){const preview=Tariffs.match(records,row,{...batchSuggestions,...context});if(preview.status==='matched')row.suggested={...Tariffs.reference(preview.record,row,month),assumed:true};}
     }
     const patterns={cold:/питьев|холодн/i,sewage:/водоотвед/i,heat:/теплов/i,hot:/горяч/i,gas:/газ/i,electricity:/электр/i,waste:/отход|тко/i};
     batchMissing=batchNeeded(unresolved.filter(row=>records.some(r=>patterns[row.kind]?.test(r.kind)&&Tariffs.effective(r,month)&&Tariffs.rate(r,row)!==null))).filter(([key])=>!batchContext[key]);
@@ -65,7 +71,7 @@ async function openBatch(){
     const label=node('label',title,'fld');let input;
     if(type==='text'){input=document.createElement('input');input.placeholder='Населённый пункт';}
     else{input=document.createElement('select');const options=type==='provider'?[['','Не знаю / уточню позже'],...batchNames(key,period()).map(n=>[n,shortSupplier(n)])]:type;for(const [value,title] of options){const option=node('option',title);option.value=value;input.append(option);}}
-    input.name=key;input.value=batchContext[key]||'';
+    input.name=key;input.value=batchContext[key]||batchSuggestions[key]||'';
     input.onchange=()=>{batchContext[key]=input.value;automaticTariffs();};
     label.append(input);host.append(label);
   }
@@ -81,14 +87,18 @@ document.addEventListener('receipt-clear',()=>{batchVersion++;clearTimeout(batch
 function renderAutomaticTariffs(){
   const host=$('automatic-tariffs');if(!host)return;
   host.hidden=!batchMissing.length&&!batchNotice;
-  const signature=batchMissing.map(f=>f[0]).join('|')+'|'+$('region').value+'|'+batchNotice;
+  const signature=batchMissing.map(f=>f[0]).join('|')+'|'+$('region').value+'|'+batchNotice+'|'+JSON.stringify(batchSuggestions);
   if(host.dataset.fields===signature)return;
   host.dataset.fields=signature;host.replaceChildren();
   if(batchNotice)host.append(node('p',batchNotice,'note'));
   if(!batchMissing.length)return;
-  host.append(node('p','Для сверки тарифов уточните только эти условия. Результат обновится автоматически.','note'));
+  const assumed=Object.entries(batchSuggestions).map(([key,value])=>{const field=batchFields.find(f=>f[0]===key);return field[1]+': '+(Array.isArray(field[2])?field[2].find(x=>x[0]===value)?.[1]:shortSupplier(value));});
+  if(assumed.length){host.append(node('p','Предварительный подбор: '+assumed.join('; ')+'. Условия можно изменить. Это ещё не подтверждение тарифа для вашего дома.','note'));const edit=node('button','Изменить условия','text-button');edit.onclick=openBatch;host.append(edit);}
+  const required=batchMissing.filter(([key])=>!batchSuggestions[key]);
+  if(!required.length)return;
+  host.append(node('p','Для подбора осталось уточнить:','note'));
   const fields=node('div',undefined,'grid');host.append(fields);
-  for(const [key,title,type] of batchMissing){
+  for(const [key,title,type] of required){
     const label=node('label',title,'fld');let input;
     if(type==='text'){input=document.createElement('input');input.placeholder='Населённый пункт';}
     else{input=document.createElement('select');const options=type==='provider'?[['','Выберите поставщика'],...batchNames(key,period()).map(n=>[n,shortSupplier(n)])]:type;for(const [value,title] of options){const option=node('option',title);option.value=value;input.append(option);}}

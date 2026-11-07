@@ -29,7 +29,7 @@
       if (!result.ok) { add('missing', row.title + ': не хватает данных', result.error); continue; }
       valid++; expected += result.expected;
       if (result.billed !== null) { compared++; comparedExpected += result.expected; billed += result.billed; difference += result.difference; }
-      if(result.billed!==null){const official=row.mode!=='hot'&&row.official?.month===period?Calc.calculate({...row,rate:String(row.official.rate)}):null;const primary=official?.ok?official:result;primaryExpected+=primary.expected;primaryDifference+=primary.difference;}
+      if(result.billed!==null){const chosen=row.official?.month===period?row.official:row.suggested?.month===period?row.suggested:null;const official=row.mode!=='hot'&&chosen?Calc.calculate({...row,rate:String(chosen.rate)}):null;const primary=official?.ok?official:result;primaryExpected+=primary.expected;primaryDifference+=primary.difference;}
       else add('missing', row.title + ': нет начисления', 'Введите сумму именно за эту услугу, без долга и пеней.');
       if (result.difference) add('warning', row.title + ': разница ' + amount(result.difference / 100) + ' ₽', 'Объем × тариф с напечатанными коэффициентом и перерасчетом отличается от начисления. Сверьте цифры и запросите расшифровку. Это не доказательство переплаты.');
       if (row.mode === 'hot') add('missing', row.title + ': нужны основания обоих компонентов ГВС', 'Одна выбранная ставка не подтверждает всю двухкомпонентную сумму. Уточните тариф теплоносителя, тариф тепла и расход тепла на подогрев; сверка арифметики остается доступной.', 'tariff');
