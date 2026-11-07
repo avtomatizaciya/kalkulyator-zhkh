@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10261e">
+  <title>Обозреватель тарифов ЖКХ</title>
+  <link rel="stylesheet" href="tariff-explorer.css">
+  <script src="tariffs.js" defer></script>
+  <script src="tariff-explorer.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="index.html">← Калькулятор ЖКХ</a>
+    <span>Справочник ЖКХ</span>
+  </header>
+  <main id="workspace">
+    <section class="hero" aria-labelledby="title">
+      <div>
+        <p class="eyebrow">Данные ГИС ЖКХ</p>
+        <h1 id="title">Обозреватель тарифов</h1>
+        <p>Найдите ставку, сравните поставщиков и проверьте документ, которым она установлена.</p>
+      </div>
+      <aside class="snapshot" aria-label="Сведения о выгрузке">
+        <strong id="coverage">Загрузка…</strong>
+        <span id="snapshot-date"></span>
+        <a id="archive" target="_blank" rel="noopener" hidden>Скачать выгрузку ГИС ЖКХ ↗</a>
+      </aside>
+    </section>
+    <section class="filters" aria-label="Фильтры тарифов">
+      <label>Регион<select id="region" disabled></select></label>
+      <label>Месяц действия<input id="month" type="month" min="2000-01" max="2099-12"></label>
+      <label>Услуга<select id="service" disabled><option value="">Все услуги</option></select></label>
+      <label>Поставщик<select id="supplier" disabled><option value="">Все поставщики</option></select></label>
+    </section>
+    <section class="results" aria-labelledby="results-title">
+      <div class="results-head">
+        <div><p class="eyebrow">Ставки за месяц</p><h2 id="results-title">Тарифы</h2></div>
+        <p id="status" role="status" aria-live="polite">Загружаем справочник…</p>
+        <button id="retry" type="button" hidden>Повторить</button>
+      </div>
+      <div id="result-content" hidden>
+        <div class="table-wrap">
+          <table aria-label="Найденные тарифы">
+            <thead><tr><th scope="col">Поставщик и территория</th><th scope="col">Услуга и условия</th><th scope="col">Ставка</th><th scope="col">Источник</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <nav class="pagination" aria-label="Страницы тарифов">
+          <button id="previous" type="button" aria-label="Предыдущая страница">←</button>
+          <span id="page"></span>
+          <button id="next" type="button" aria-label="Следующая страница">→</button>
+        </nav>
+      </div>
+    </section>
+    <section class="comparison" aria-labelledby="comparison-title">
+      <p class="eyebrow">Сравнение поставщиков</p>
+      <h2 id="comparison-title">График ставок</h2>
+      <p>Сравниваем ставки за выбранный месяц в одном регионе при одинаковой услуге, единице и условиях, записанных в базе.</p>
+      <label>Условия сравнения<select id="group" disabled><option value="">Нет сопоставимых ставок</option></select></label>
+      <p id="chart-caption" role="status"></p>
+      <div id="chart"></div>
+    </section>
+    <footer>В справочнике показаны записи из выгрузки и уточнения со ссылками на документы. Отсутствие ставки в выдаче не означает, что тариф не установлен.</footer>
+  </main>
+  <dialog id="source-dialog" aria-labelledby="source-title">
+    <form method="dialog"><button class="close" aria-label="Закрыть источник">✕</button></form>
+    <p class="eyebrow">Источник ставки</p><h2 id="source-title"></h2>
+    <dl id="source-details"></dl>
+    <a id="source-link" target="_blank" rel="noopener"></a>
+  </dialog>
+</body>
+</html>

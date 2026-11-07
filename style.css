@@ -86,3 +86,11 @@ body{height:100dvh;overflow:hidden}.app-shell{height:100dvh;display:flex;flex-di
 .automatic-tariffs{flex-shrink:0;max-height:24vh;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--card)}.automatic-tariffs .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:8px}.automatic-tariffs .note{margin:0 0 6px}.automatic-tariffs .fld{font-size:10px;gap:3px}.automatic-tariffs input,.automatic-tariffs select{min-height:32px;padding:6px 8px}.services-heading #edit-feedback{max-width:48%;text-align:right}.automatic-tariffs[hidden]{display:none}
 
 @media(max-width:600px){.automatic-tariffs{max-height:19vh;padding:7px 10px}.automatic-tariffs .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.automatic-tariffs .note{font-size:9px;line-height:1.4}.automatic-tariffs .fld{min-width:0}.automatic-tariffs input,.automatic-tariffs select{width:100%;min-width:0;font-size:10px}}
+
+body[data-screen=welcome][data-has-entries=true] .view-tabs button[data-view=result]{display:block}.row-formula,.row-status,.row-reference{display:block;font-size:9px;line-height:1.35;font-weight:400;color:var(--mute);margin-top:3px}.row-reference{text-align:right}.row-reference span{display:block}.result-number.matched{color:var(--good)}.result-number.mismatch .row-status{color:inherit}.row-formula{overflow-wrap:anywhere}@media(max-width:600px){.row-formula,.row-status,.row-reference{font-size:8px}}
+
+body[data-screen=welcome] #automatic-tariffs{display:none}#automatic-tariffs{flex-shrink:0;max-height:180px;overflow:auto}#automatic-tariffs select{min-width:0;width:100%;text-overflow:ellipsis}@media(max-width:600px){#automatic-tariffs{max-height:120px}}
+
+#view-result[data-verified=false] .metrics article:last-child{background:var(--field);color:var(--ink)}
+
+.view-tabs .tariff-explorer-link{display:inline-flex;align-items:center;padding:7px 10px;font-size:11px;text-decoration:none;color:var(--ink);white-space:nowrap}@media(max-width:600px){.view-tabs .tariff-explorer-link{padding:7px 3px;font-size:9px}.view-tabs button{padding-left:4px;padding-right:4px}}

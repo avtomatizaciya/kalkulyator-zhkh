@@ -109,6 +109,7 @@
   }
   const api = { decode, effective, rate, active, candidates, match, mergeCorrections };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
+  if (!document.getElementById('tariff-dialog')) { root.Tariffs = api; return; }
   let manifest, records = [], target = null, loadVersion = 0, resultPage = 0;
   const el = id => document.getElementById(id);
   const regionCache = new Map();

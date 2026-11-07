@@ -83,17 +83,19 @@ async function recognizeImage(image, job) {
     const timeout=new Promise((resolve,reject)=>{deadline=setTimeout(()=>reject(new Error('Распознавание заняло слишком много времени. Попробуйте четкое фото только таблицы.')),90000);});
     let { data } = await Promise.race([worker.recognize(canvas, {}, { text: true, tsv: true }),timeout]);
     // Thermal receipts mix very small volume figures with larger labels.
+    let refinementExpired=false;
     if(/ГВС\s+компонент/i.test(data.text)){
-      canvas.width=canvas.height=0;canvas=await prepareImage(image,4800);
-      await worker.setParameters({tessedit_pageseg_mode:'3'});
-      ({data}=await Promise.race([worker.recognize(canvas,{}, {text:true,tsv:true}),timeout]));
+      const refined=await prepareImage(image,4800);
+      try{await worker.setParameters({tessedit_pageseg_mode:'3'});const next=await Promise.race([worker.recognize(refined,{}, {text:true,tsv:true}),timeout]);data=next.data;canvas.width=canvas.height=0;canvas=refined;}
+      catch(error){refined.width=refined.height=0;refinementExpired=true;}
     }
     const words = (data.tsv || '').split('\n').slice(1).map(line => line.split('\t')).filter(c => c[0] === '5' && c[11]?.trim()).map(c => ({ x: Number(c[6]), y: Number(c[7]), w: Number(c[8]), h: Number(c[9]), text: c.slice(11).join('\t') }));
     // Re-read long numbers with ambiguous punctuation as isolated cells. Changed digits require
     // agreement of two segmentation modes; no value is inferred from a charge.
     let text=data.text;
     const candidates=words.filter(w=>/^(?:\d{7,12}|\d-\d{6,10}|©[.,]\d{6,10})$/.test(w.text)).slice(0,12);
-    if(candidates.length){
+    if(candidates.length&&!refinementExpired){
+      try{
       await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,-'});
       for(const word of candidates){
         if(job!==receiptJob)throw new Error('Отменено');
@@ -128,7 +130,9 @@ async function recognizeImage(image, job) {
         }
         if(accepted){text=text.replace(word.text,value);word.text=value;}
       }
+      }catch(error){/* Optional digit refinement must not discard the readable receipt. */}
     }
+    if(job!==receiptJob)throw new Error('Отменено');
     const result = { text, pages: [{ width: canvas.width, height: canvas.height, words }] };
     canvas.width = canvas.height = 0; return result;
   } finally { clearTimeout(deadline); await worker.terminate(); if (receiptWorker === worker) receiptWorker = null; }

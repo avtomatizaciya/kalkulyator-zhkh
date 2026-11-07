@@ -15,6 +15,7 @@ function batchNeeded(rows){
   if(kinds.has('electricity'))for(const k of ['electricCategory','electricBand','electricZone'])keys.add(k);
   return batchFields.filter(([key])=>keys.has(key));
 }
+function shortSupplier(value){return value.replace(/ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ/gi,'ООО').replace(/ПУБЛИЧНОЕ АКЦИОНЕРНОЕ ОБЩЕСТВО/gi,'ПАО').replace(/ОТКРЫТОЕ АКЦИОНЕРНОЕ ОБЩЕСТВО/gi,'ОАО').replace(/АКЦИОНЕРНОЕ ОБЩЕСТВО/gi,'АО').replace(/МУНИЦИПАЛЬНОЕ УНИТАРНОЕ ПРЕДПРИЯТИЕ/gi,'МУП').replace(/ГОСУДАРСТВЕННОЕ УНИТАРНОЕ ПРЕДПРИЯТИЕ/gi,'ГУП').replace(/ГОСУДАРСТВЕННОЕ ПРЕДПРИЯТИЕ/gi,'ГП');}
 function batchNames(key,month){return [...new Set(batchRecords.filter(r=>Tariffs.effective(r,month)&&supplierKinds[key].test(r.kind)&&r.supplier).map(r=>r.supplier))].sort();}
 function rememberKnownSuppliers(month){
   const chosen=$('entry-supplier').value.trim().toLowerCase();
@@ -63,7 +64,7 @@ async function openBatch(){
   for(const [key,title,type] of batchNeeded(state.entries.filter(r=>r.enabled&&r.period===period()))){
     const label=node('label',title,'fld');let input;
     if(type==='text'){input=document.createElement('input');input.placeholder='Населённый пункт';}
-    else{input=document.createElement('select');const options=type==='provider'?[['','Не знаю / уточню позже'],...batchNames(key,period()).map(n=>[n,n])]:type;for(const [value,title] of options){const option=node('option',title);option.value=value;input.append(option);}}
+    else{input=document.createElement('select');const options=type==='provider'?[['','Не знаю / уточню позже'],...batchNames(key,period()).map(n=>[n,shortSupplier(n)])]:type;for(const [value,title] of options){const option=node('option',title);option.value=value;input.append(option);}}
     input.name=key;input.value=batchContext[key]||'';
     input.onchange=()=>{batchContext[key]=input.value;automaticTariffs();};
     label.append(input);host.append(label);
@@ -90,7 +91,7 @@ function renderAutomaticTariffs(){
   for(const [key,title,type] of batchMissing){
     const label=node('label',title,'fld');let input;
     if(type==='text'){input=document.createElement('input');input.placeholder='Населённый пункт';}
-    else{input=document.createElement('select');const options=type==='provider'?[['','Выберите поставщика'],...batchNames(key,period()).map(n=>[n,n])]:type;for(const [value,title] of options){const option=node('option',title);option.value=value;input.append(option);}}
+    else{input=document.createElement('select');const options=type==='provider'?[['','Выберите поставщика'],...batchNames(key,period()).map(n=>[n,shortSupplier(n)])]:type;for(const [value,title] of options){const option=node('option',title);option.value=value;input.append(option);}}
     input.name=key;input.value=batchContext[key]||'';
     input.onchange=()=>{batchContext[key]=input.value;scheduleAutomaticTariffs();};label.append(input);fields.append(label);
   }

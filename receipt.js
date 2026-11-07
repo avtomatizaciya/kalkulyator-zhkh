@@ -67,6 +67,9 @@
       const heights=(financial.length>=3?financial:words).map(w=>w.h).filter(h=>h>0).sort((a,b)=>a-b),height=heights[Math.floor(heights.length/2)]||10;
       const epdHeader=words.some(w=>/^платежа$/i.test(w.text))&&words.some(w=>/^(?:тарифу|населения)$/i.test(w.text))&&words.some(w=>/^Перерасчеты/i.test(w.text));
       if(epdHeader){
+        const finalHeader=words.find(w=>/^Итого$/i.test(w.text));
+        const followingHeader=finalHeader&&words.filter(w=>/^(?:Компенсация|Суммарный)$/i.test(w.text)&&w.x>finalHeader.x).sort((a,b)=>a.x-b.x)[0];
+        const chargeEnd=followingHeader?(finalHeader.x+(finalHeader.w||0)/2+followingHeader.x+(followingHeader.w||0)/2)/2:Infinity;
         const lines=[];
         for(const word of words){let line=lines.find(l=>Math.abs(l.y-word.y)<=height*.5);if(!line){line={y:word.y,words:[]};lines.push(line)}line.words.push(word)}
         for(const line of lines.sort((a,b)=>a.y-b.y)){
@@ -80,7 +83,7 @@
           const cells=[];
           for(const w of ws.filter(w=>/^[−\-\d.,]+$/.test(w.text))){const last=cells.at(-1);if(last&&w.x-last.right<height*.9){last.text+=w.text;last.right=w.x+(w.w||0)}else cells.push({x:w.x,right:w.x+(w.w||0),text:w.text})}
           for(const c of cells)c.text=c.text.replace(/−/g,'-').replace(',','.');
-          const numericCells=cells.filter(c=>!/^[-—]$/.test(c.text));
+          const numericCells=cells.filter(c=>!/^[-—]$/.test(c.text)&&(c.x+c.right)/2<chargeEnd);
           if(numericCells.some(c=>! /^-?\d+(?:\.\d+)?$/.test(c.text)))continue;
           const before=numericCells.filter(c=>c.right<=unit.x),after=numericCells.filter(c=>c.x>unit.x+(unit.w||0));
           // Printed EPD order: code, tariff, optional normative, unit, volume, cost, corrections, final.
@@ -141,10 +144,46 @@
     }
     return rows;
   }
+  function simpleTableRows(pages) {
+    const rows=[];
+    for(const page of pages||[]) {
+      const words=page.words||[],centre=w=>w.x+(w.w||0)/2;
+      const rate=words.find(w=>/^(?:Ставка|Тариф)$/i.test(w.text));
+      if(!rate)continue;
+      const height=rate.h||10,header=words.filter(w=>Math.abs(w.y-rate.y)<height);
+      const quantity=header.find(w=>/^Об[ъь]?[её]м$/i.test(w.text)),billed=header.find(w=>/^(?:Сумма|Начислено)$/i.test(w.text)),unit=header.find(w=>/^Ед\.?$/i.test(w.text));
+      if(!quantity||!billed||!unit)continue;
+      // This path accepts only an explicit three-number table, with no correction or balance columns.
+      if(words.some(w=>/^(?:Перерасч[её]т\S*|Сальдо|Пени)$/i.test(w.text)))continue;
+      const columns=[{key:'rate',word:rate},{key:'quantity',word:quantity},{key:'billed',word:billed}].sort((a,b)=>centre(a.word)-centre(b.word));
+      const lines=[];
+      for(const word of words){let line=lines.find(l=>Math.abs(l.y-word.y)<height*.65);if(!line){line={y:word.y,words:[]};lines.push(line)}line.words.push(word)}
+      for(const line of lines.sort((a,b)=>a.y-b.y)) {
+        if(line.y<=rate.y+height)continue;
+        const ws=line.words.sort((a,b)=>a.x-b.x),label=ws.filter(w=>w.x<unit.x-height).map(w=>w.text).join(' ');
+        if(/^(?:Итого|Всего|Справоч)/i.test(label))break;
+        if(!/[а-я]/i.test(label))continue;
+        const aliases=[['cold',/^Хол\.?\s*вода/i],['hot',/^(?:Горяч\.?\s*вода|Компонент\s+на\s+ГВС)/i],['electricity',/^Электр\./i],['sewage',/^Канал\s/i]];
+        const kind=names.concat(aliases).find(([,pattern])=>pattern.test(label))?.[0]||'other';
+        const values={};
+        for(let i=0;i<columns.length;i++) {
+          const a=columns[i],left=(centre(i?columns[i-1].word:unit)+centre(a.word))/2;
+          const right=i+1<columns.length?(centre(a.word)+centre(columns[i+1].word))/2:Infinity;
+          const value=ws.filter(w=>centre(w)>=left&&centre(w)<right&&!/^[|!]+$/.test(w.text)).map(w=>w.text).join('').replace(/−/g,'-').replace(',','.');
+          values[a.key]=/^-?\d+(?:\.\d+)?$/.test(value)?value:'';
+        }
+        if(!Object.values(values).some(Boolean))continue;
+        const printedUnit=ws.filter(w=>w.x>=unit.x-height&&centre(w)<(centre(unit)+centre(columns[0].word))/2).map(w=>w.text).join('');
+        rows.push({kind,mode:'quantity',...values,correction:'0',rateBasis:'1',title:label,unit:printedUnit.replace(/^куб\.?$/i,'м³').replace(/^м2$/,'м²').replace(/^[Г\[]кал$/i,'Гкал').replace(/^кВт$/i,'кВт·ч'),confidence:Object.values(values).every(Boolean)?'table':'partial'});
+      }
+    }
+    return rows;
+  }
   function parse(text, pages = []) {
     text = text.replace(/\u00a0/g, ' ');
     const rows = tableRows(pages);
     if(!rows.length)rows.push(...croppedTableRows(pages));
+    if(!rows.length)rows.push(...simpleTableRows(pages));
     // A gas table has an explicit method row and a tariff per thousand cubic metres.
     // Never use the account-balance table or the total payable as a service charge.
     const gas = /поставка\s+природного\s+газа|газоснабжение/i.test(text)||(/Метод\s+расчета/i.test(text)&&/Температ/i.test(text)&&/Узел/i.test(text));

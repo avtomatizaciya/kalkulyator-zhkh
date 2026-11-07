@@ -19,7 +19,7 @@
   function check(entries, invoices, profile, period) {
     const rows = entries.filter(r => r.enabled && r.period === period), docs = invoices.filter(d => d.period === period);
     let normCount=0,maintenanceCount=0;
-    const checks = []; let compared = 0, comparedExpected = 0, expected = 0, billed = 0, difference = 0, valid = 0, officialCount = 0, officialDifference = 0;
+    const checks = []; let compared = 0, comparedExpected = 0, primaryExpected = 0, primaryDifference = 0, expected = 0, billed = 0, difference = 0, valid = 0, officialCount = 0, officialDifference = 0;
     const add = (type, title, detail, action = 'data') => checks.push({type,title,detail,action});
     const unread = docs.filter(d => !entries.some(r => r.sourceId === d.id));
     if (unread.length) add('missing', `Не удалось распределить ${unread.length} квитанций`, 'Текст сохранен в разделе квитанций. Внесите недостающие услуги вручную; автоматически прочитанные документы сохранены.', 'documents');
@@ -29,6 +29,7 @@
       if (!result.ok) { add('missing', row.title + ': не хватает данных', result.error); continue; }
       valid++; expected += result.expected;
       if (result.billed !== null) { compared++; comparedExpected += result.expected; billed += result.billed; difference += result.difference; }
+      if(result.billed!==null){const official=row.mode!=='hot'&&row.official?.month===period?Calc.calculate({...row,rate:String(row.official.rate)}):null;const primary=official?.ok?official:result;primaryExpected+=primary.expected;primaryDifference+=primary.difference;}
       else add('missing', row.title + ': нет начисления', 'Введите сумму именно за эту услугу, без долга и пеней.');
       if (result.difference) add('warning', row.title + ': разница ' + amount(result.difference / 100) + ' ₽', 'Объем × тариф с напечатанными коэффициентом и перерасчетом отличается от начисления. Сверьте цифры и запросите расшифровку. Это не доказательство переплаты.');
       if (row.mode === 'hot') add('missing', row.title + ': нужны основания обоих компонентов ГВС', 'Одна выбранная ставка не подтверждает всю двухкомпонентную сумму. Уточните тариф теплоносителя, тариф тепла и расход тепла на подогрев; сверка арифметики остается доступной.', 'tariff');
@@ -72,7 +73,7 @@
       if (a.ok && b.ok && b.quantity>0 && a.quantity/b.quantity>1.4) add('advice',now[0].title+': вырос расход',`По сравнению с ${previous} расход выше на ${amount((a.quantity/b.quantity-1)*100)}%. Проверьте длину периода, показания, число проживающих и возможные утечки. Рост сам по себе не означает ошибку.`,'history');
     }
     const priority = {warning:0,missing:1,advice:2,ok:3}; checks.sort((a,b)=>priority[a.type]-priority[b.type]);
-    return {compared,comparedExpected,normCount,maintenanceCount,rows:rows.length,valid,expected,billed,difference,officialCount,officialDifference,checks,previous};
+    return {compared,comparedExpected,primaryExpected,primaryDifference,eligible,normCount,maintenanceCount,rows:rows.length,valid,expected,billed,difference,officialCount,officialDifference,checks,previous};
   }
   const api = {facts,check}; if (typeof module !== 'undefined' && module.exports) module.exports=api; else root.ReceiptAnalysis=api;
 })(globalThis);
