@@ -168,9 +168,9 @@ function renderResultRows(){
     const refresh=()=>{
       const arithmetic=Zhkh.calculate(row),official=row.mode!=='hot'&&row.official?.month===period()?row.official:row.suggested?.month===period()?row.suggested:null,c=official?Zhkh.calculate({...row,rate:String(official.rate)}):arithmetic;
       calculated.textContent=c.ok?money(c.expected).replace(/\s*₽$/,''):'Нет данных';
-      formula.textContent=c.ok?(official?(official.assumed?'Предварительно по ГИС: ':'По тарифу ГИС: '):'По квитанции: ')+c.formula:c.error;calculated.append(formula);
+      formula.textContent=c.ok?(official?(official.assumed?'Предварительно по ГИС: ':'По тарифу ГИС: '):'По квитанции: ')+c.formula:c.error;calculated.append(formula);calculated.title=formula.textContent;
       difference.textContent=c.ok&&c.billed!==null?money(c.difference).replace(/\s*₽$/,''):'Не сравнили';
-      status.textContent=!c.ok?'Дополните цифры':c.billed===null?'Введите начисление':c.difference?'Есть расхождение':official?(official.assumed?'Совпало при выбранных предположениях':'Совпало с ГИС'):'Арифметика верна';difference.append(status);
+      status.textContent=!c.ok?'Дополните цифры':c.billed===null?'Введите начисление':c.difference?'Есть расхождение':official?(official.assumed?'Предварительно совпало':'Совпало с ГИС'):'Арифметика верна';difference.append(status);
       difference.classList.toggle('mismatch',Boolean(c.difference));difference.classList.toggle('matched',Boolean(official&&!official.assumed&&c.ok&&c.billed!==null&&!c.difference));
       reference.replaceChildren();
       if(official){const link=node('a',(official.assumed?'Предварительно: ':'ГИС: ')+official.rate+' ₽');link.title=official.supplier+' · '+official.act;link.href=official.source;link.target='_blank';link.rel='noopener';reference.append(link);const o=Zhkh.calculate({...row,rate:String(official.rate)});if(o.ok)reference.append(node('span','По ГИС: '+money(o.expected)));}

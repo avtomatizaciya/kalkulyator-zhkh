@@ -94,3 +94,36 @@ body[data-screen=welcome] #automatic-tariffs{display:none}#automatic-tariffs{fle
 #view-result[data-verified=false] .metrics article:last-child{background:var(--field);color:var(--ink)}
 
 .view-tabs .tariff-explorer-link{display:inline-flex;align-items:center;padding:7px 10px;font-size:11px;text-decoration:none;color:var(--ink);white-space:nowrap}@media(max-width:600px){.view-tabs .tariff-explorer-link{padding:7px 3px;font-size:9px}.view-tabs button{padding-left:4px;padding-right:4px}}
+
+/* Receipt-sized comparison: reserve the viewport for service rows. */
+#automatic-tariffs{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;max-height:65px}#automatic-tariffs[hidden]{display:none}#automatic-tariffs .note{margin:0;font-size:10px;line-height:1.35}#automatic-tariffs button{white-space:nowrap;font-size:10px;min-height:20px;padding:0}.evidence-link{display:block;font-size:12px;grid-column:1/-1}
+@media(min-width:801px){
+ body[data-screen=workspace] .app-shell{padding-top:10px}
+ body[data-screen=workspace] .app-header{padding-bottom:7px}
+ body[data-screen=workspace] .brand-caption{display:none}
+ body[data-screen=workspace] .context-bar{margin-top:7px}
+ body[data-screen=workspace] .context-bar input,body[data-screen=workspace] .context-bar select{height:32px;min-height:32px;padding-top:5px;padding-bottom:5px}
+ body[data-screen=workspace] .context-bar .btn{min-height:32px;padding:6px 12px}
+ body[data-screen=workspace] .view-tabs{margin-top:6px;padding-bottom:5px}
+ body[data-screen=workspace] .view-tabs button{padding:6px 12px}
+ #view-result{padding-top:7px;padding-bottom:0}
+ #view-result .view-heading{margin-bottom:4px}
+ #view-result .view-heading h1{font-size:22px}
+ #view-result .view-heading .eyebrow{font-size:9px;margin-bottom:2px}
+ #view-result .view-heading>.btn{min-height:30px;padding:6px 12px}
+ #view-result .verification-summary{display:none}
+ #view-result .metrics{margin:5px 0 7px;padding:4px;border-radius:12px}
+ #view-result .metrics article{padding:6px 16px}
+ #view-result .metrics span{font-size:10px}
+ #view-result .metrics strong{font-size:23px;margin-top:1px;line-height:1.2}
+ #view-result .services-heading{margin-bottom:5px}
+ #view-result .services-heading h2{font-size:14px}
+ .result-columns{padding:6px 12px;font-size:10px}
+ .result-row{padding:2px 12px;gap:8px;min-height:40px;line-height:1.25}
+ .result-fields .fld{gap:0;line-height:1.2}
+ .result-service{gap:0 7px}.result-service>strong{font-size:11px;line-height:1.2}
+ .result-fields input{height:23px!important;min-height:0!important;padding:2px 5px!important;font-size:12px!important}
+ .row-reference{font-size:9px;margin-top:0}.row-reference span,.row-formula{display:none}
+ .row-status{font-size:9px;margin-top:1px;line-height:1.15}
+ .official-result{padding:5px 12px;margin-top:6px}.official-result>summary{font-size:11px}
+}
