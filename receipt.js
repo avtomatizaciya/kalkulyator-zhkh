@@ -65,7 +65,7 @@
       const words=(page.words||[]).flatMap(w=>[...w.text.matchAll(/\S+/g)].map(m=>({...w,text:m[0],x:w.x+(w.w||0)*m.index/w.text.length}))).filter(w=>! /^[|!]+$/.test(w.text));
       const financial=words.filter(w=>/\d[.,]\d/.test(w.text)&&w.h>0);
       const heights=(financial.length>=3?financial:words).map(w=>w.h).filter(h=>h>0).sort((a,b)=>a-b),height=heights[Math.floor(heights.length/2)]||10;
-      const epdHeader=words.some(w=>/^платежа$/i.test(w.text))&&words.some(w=>/^тарифу$/i.test(w.text))&&words.some(w=>/^Перерасчеты/i.test(w.text));
+      const epdHeader=words.some(w=>/^платежа$/i.test(w.text))&&words.some(w=>/^(?:тарифу|населения)$/i.test(w.text))&&words.some(w=>/^Перерасчеты/i.test(w.text));
       if(epdHeader){
         const lines=[];
         for(const word of words){let line=lines.find(l=>Math.abs(l.y-word.y)<=height*.5);if(!line){line={y:word.y,words:[]};lines.push(line)}line.words.push(word)}
@@ -74,17 +74,20 @@
           if(!unit)continue;
           const label=ws.filter(w=>w.x<unit.x&&!/^[−\-\d.,]+$/.test(w.text)).map(w=>w.text).join(' ');
           if(/в\s*т\.?\s*ч\.?/i.test(label))continue;
-          const found=names.find(([,pattern])=>pattern.test(label));if(!found)continue;
+          const found=names.find(([,pattern])=>pattern.test(label));
+          const kind=found?.[0]||(/^Техническое обслуживание ВКГО$/i.test(label)?'other':'');
+          if(!kind)continue;
           const cells=[];
           for(const w of ws.filter(w=>/^[−\-\d.,]+$/.test(w.text))){const last=cells.at(-1);if(last&&w.x-last.right<height*.9){last.text+=w.text;last.right=w.x+(w.w||0)}else cells.push({x:w.x,right:w.x+(w.w||0),text:w.text})}
           for(const c of cells)c.text=c.text.replace(/−/g,'-').replace(',','.');
-          if(cells.some(c=>! /^-?\d+(?:\.\d+)?$/.test(c.text)))continue;
-          const before=cells.filter(c=>c.right<=unit.x),after=cells.filter(c=>c.x>unit.x+(unit.w||0));
+          const numericCells=cells.filter(c=>!/^[-—]$/.test(c.text));
+          if(numericCells.some(c=>! /^-?\d+(?:\.\d+)?$/.test(c.text)))continue;
+          const before=numericCells.filter(c=>c.right<=unit.x),after=numericCells.filter(c=>c.x>unit.x+(unit.w||0));
           // Printed EPD order: code, tariff, optional normative, unit, volume, cost, corrections, final.
           const rate=before.find(c=>/\./.test(c.text));if(!rate||after.length<3)continue;
           const [quantity,original]=after,final=after.at(-1),correction=after.slice(2,-1).reduce((a,c)=>a+Number(c.text),0);
           if(Math.abs(Number(original.text)+correction-Number(final.text))>.011)continue;
-          rows.push({kind:found[0],mode:'quantity',quantity:quantity.text,rate:rate.text,billed:final.text,correction:String(correction),rateBasis:'1',title:label,unit:unit.text.replace(/^м2\.?$/,'м²').replace(/^м3\.?$/,'м³').replace('кВт/ч','кВт·ч'),confidence:'table'});
+          rows.push({kind,mode:'quantity',quantity:quantity.text,rate:rate.text,billed:final.text,correction:String(correction),rateBasis:'1',title:label,unit:unit.text.replace(/^м2\.?$/,'м²').replace(/^м3\.?$/,'м³').replace('кВт/ч','кВт·ч'),confidence:'table'});
         }
         continue;
       }
@@ -94,11 +97,16 @@
       const heat=Boolean(find(/отоп.*\//i));
       let final=find(epd?/^Итого$/i:/^Всего$/i);
       if(!final&&!epd){const tail=find(/^сего$/i),head=tail&&words.find(w=>/^В$/i.test(w.text)&&Math.abs(w.y-tail.y)<height&&w.x<tail.x&&tail.x-w.x<height*2);if(head)final={...head,w:tail.x+(tail.w||0)-head.x};}
-      if(!tariff||!volume||!base||!final||(!epd&&!heat))continue;
+      // The older thermal form prints eleven column numbers below the headers.
+      // Its first "Всего" is before corrections; the final amount is column 11.
+      const numberedEnd=heat&&tariff&&words.find(w=>w.text==='11'&&w.y>tariff.y&&w.y<tariff.y+height*14);
+      let numbered=numberedEnd?Array.from({length:11},(_,i)=>words.find(w=>w.text===String(i+1)&&Math.abs(w.y-numberedEnd.y)<height*.5)):null;
+      if(numbered?.some((w,i)=>!w||(i&&w.x<=numbered[i-1].x)))numbered=null;
+      if(!tariff||!volume||(!numbered&&(!base||!final))||(!epd&&!heat))continue;
       // Header centres define the columns at any OCR raster scale. Never derive values from arithmetic.
       const centre=w=>w.x+(w.w||0)/2;
-      const corrections=heat?words.filter(w=>/^Пере-$/i.test(w.text)&&w.x>base.x&&w.x<final.x):[];
-      const anchors=[{key:'quantity',word:volume},{key:'rate',word:tariff},{key:'original',word:base},...corrections.map((word,i)=>({key:'correction'+i,word})),{key:'billed',word:final}].sort((a,b)=>centre(a.word)-centre(b.word));
+      const corrections=heat&&!numbered?words.filter(w=>/^Пере-$/i.test(w.text)&&w.x>base.x&&w.x<final.x):[];
+      const anchors=numbered?Object.entries({quantity:3,rate:5,original:8,correction0:9,correction1:10,billed:11}).map(([key,column])=>({key,column,word:numbered[column-1]})):[{key:'quantity',word:volume},{key:'rate',word:tariff},{key:'original',word:base},...corrections.map((word,i)=>({key:'correction'+i,word})),{key:'billed',word:final}].sort((a,b)=>centre(a.word)-centre(b.word));
       if(new Set(anchors.map(a=>centre(a.word))).size!==anchors.length)continue;
       const lines=[];
       for(const word of words){let line=lines.find(l=>Math.abs(l.y-word.y)<=height*.65);if(!line){line={y:word.y,words:[]};lines.push(line)}line.words.push(word)}
@@ -112,8 +120,11 @@
         if(!found&&!component)continue;
         const values={};let ambiguous=false;
         for(let i=0;i<anchors.length;i++) {
-          const a=anchors[i],unitHeader=find(/^(?:Ед\.?|изм\.?)$/i),left=i?(centre(anchors[i-1].word)+centre(a.word))/2:unitHeader?(centre(unitHeader)+centre(a.word))/2:centre(a.word)-height*3;
-          const right=i+1<anchors.length?(centre(a.word)+centre(anchors[i+1].word))/2:centre(a.word)+height*4;
+          const a=anchors[i],unitHeader=find(/^(?:Ед\.?|изм\.?)$/i);
+          const previous=numbered?numbered[a.column-2]:anchors[i-1]?.word||unitHeader;
+          const next=numbered?numbered[a.column]:anchors[i+1]?.word;
+          const left=previous?(centre(previous)+centre(a.word))/2:centre(a.word)-height*3;
+          const right=next?(centre(a.word)+centre(next))/2:centre(a.word)+height*4;
           // Separate printed correction columns must not be swallowed into an amount cell.
           const cell=ws.filter(w=>centre(w)>=left&&centre(w)<right&&/^[−\-\d.,]+$/.test(w.text)).map(w=>w.text).join('').replace(/−/g,'-').replace(',','.');
           if(!cell&&a.key.startsWith('correction')){values[a.key]='0';continue}

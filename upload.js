@@ -54,10 +54,10 @@ async function recognizeImage(image, job) {
       ({data}=await Promise.race([worker.recognize(canvas,{}, {text:true,tsv:true}),timeout]));
     }
     const words = (data.tsv || '').split('\n').slice(1).map(line => line.split('\t')).filter(c => c[0] === '5' && c[11]?.trim()).map(c => ({ x: Number(c[6]), y: Number(c[7]), w: Number(c[8]), h: Number(c[9]), text: c.slice(11).join('\t') }));
-    // Re-read long unpunctuated numbers as isolated cells. Changed digits require
+    // Re-read long numbers with ambiguous punctuation as isolated cells. Changed digits require
     // agreement of two segmentation modes; no value is inferred from a charge.
     let text=data.text;
-    const candidates=words.filter(w=>/^\d{7,12}$/.test(w.text)).slice(0,12);
+    const candidates=words.filter(w=>/^(?:\d{7,12}|\d-\d{6,10}|©[.,]\d{6,10})$/.test(w.text)).slice(0,12);
     if(candidates.length){
       await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,-'});
       for(const word of candidates){
@@ -67,14 +67,29 @@ async function recognizeImage(image, job) {
         const cellHeight=peers.length?Math.min(word.h,peers[Math.floor(peers.length/2)]*1.4):word.h;
         const rectangle={left,top,width:Math.min(canvas.width-left,word.w+30),height:Math.min(canvas.height-top,cellHeight+20)};
         await worker.setParameters({tessedit_pageseg_mode:'7'});
-        const reread=await Promise.race([worker.recognize(canvas,{rectangle},{text:true}),timeout]);
+        const malformed=/[-©]/.test(word.text);
+        const isolated=malformed?document.createElement('canvas'):canvas;
+        if(malformed){
+          isolated.width=word.w*2+40;
+          isolated.height=word.h*2+40;
+          const context=isolated.getContext('2d');
+          context.fillStyle='#fff';
+          context.fillRect(0,0,isolated.width,isolated.height);
+          context.drawImage(canvas,word.x,word.y,word.w,word.h,20,20,word.w*2,word.h*2);
+        }
+        const options=malformed?{}:{rectangle};
+        const reread=await Promise.race([worker.recognize(isolated,options,{text:true}),timeout]);
         const value=reread.data.text.trim();
         if(!/^\d+[.,]\d+$/.test(value))continue;
-        let accepted=value.replace(/[.,]/g,'')===word.text;
+        const hasMisreadSeparator=word.text.includes('-');
+        if(hasMisreadSeparator&&value.replace(',','.')!==word.text.replace('-','.'))continue;
+        let accepted=hasMisreadSeparator?reread.data.confidence>=80:value.replace(/[.,]/g,'')===word.text;
         if(!accepted&&reread.data.confidence>=85){
           await worker.setParameters({tessedit_pageseg_mode:'13'});
-          const confirm=await Promise.race([worker.recognize(canvas,{rectangle},{text:true}),timeout]);
-          accepted=confirm.data.confidence>=85&&confirm.data.text.trim()===value;
+          const confirm=await Promise.race([worker.recognize(isolated,options,{text:true}),timeout]);
+          // For an unreadable leading glyph, both passes must agree and preserve the readable suffix.
+          const sameSuffix=word.text.startsWith('©')&&value.slice(1)===word.text.slice(1);
+          accepted=confirm.data.confidence>=(sameSuffix?80:85)&&confirm.data.text.trim()===value;
         }
         if(accepted){text=text.replace(word.text,value);word.text=value;}
       }
