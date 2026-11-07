@@ -113,7 +113,9 @@
       const headerBottom=Math.max(...anchors.map(a=>a.word.y+(a.word.h||height)));
       for(const line of lines.sort((a,b)=>a.y-b.y)) {
         if(line.y<=headerBottom+height*.3)continue;
-        const ws=line.words.sort((a,b)=>a.x-b.x),first=anchors[0],label=ws.filter(w=>centre(w)<centre(first.word)-height).map(w=>w.text).join(' ');
+        const ws=line.words.sort((a,b)=>a.x-b.x),first=anchors[0];
+        const printedUnit=ws.find(w=>/^(?:м[23³²]\.?|Гкал|кВт\/ч|кВт·ч)$/i.test(w.text));
+        const label=ws.filter(w=>centre(w)<Math.min(centre(first.word)-height,printedUnit?.x??Infinity)).map(w=>w.text).join(' ');
         if(/^Итого|^Всего|^Справоч|^Примечан/i.test(label))break;
         if(/в\s*т\.?\s*ч\.?/i.test(label))continue;
         const found=names.find(([,pattern])=>pattern.test(label)),component=/ГВС\s+компонент\s+на\s+(?:теплов|теплоносител)/i.test(label);
