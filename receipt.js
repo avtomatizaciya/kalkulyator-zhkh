@@ -179,11 +179,31 @@
     }
     return rows;
   }
+  // Monthly charges and corrections exclude arrears and the total payable.
+  function settlementRows(text) {
+    if(!/Начислено[\s\S]{0,180}Перерасч[её]ты[\s\S]{0,180}Задолженность/i.test(text)||!/по тарифу/i.test(text))return [];
+    const number='(-?\\d+(?:[ \\u00a0]\\d{3})*(?:[.,]\\d+)?)';
+    const pattern=new RegExp('^(.*?)'+number+'\\s+(кв\\.м\\.|куб\\.\\s*м\\.|Гкал|кВт[.*·/]ч|аб-т)\\s+'+Array(5).fill(number).join('\\s+')+'$','i');
+    const rows=[];let pending='';
+    for(const line of text.split('\n').map(s=>s.trim())) {
+      if(/^(?:Всего|Итого к оплате|Сведения о перерасчетах|Справочная информация)/i.test(line))break;
+      const m=line.match(pattern);
+      if(!m){if(/^[А-ЯЁ][А-ЯЁ /().-]+$/.test(line)&&!/^ПУ|ИТОГО/.test(line))pending=line;continue;}
+      const label=(m[1].trim()||pending).trim();pending='';if(!label)continue;
+      const n=v=>Number(v.replace(/\s/g,'').replace(',','.'));
+      const unit=/^кв\./i.test(m[3])?'м²':/куб/i.test(m[3])?'м³':/кВт/i.test(m[3])?'кВт·ч':m[3];
+      const aliases=[['cold',/ХОЛОДНОЕ В\/С/i],['hot',/ГОРЯЧЕЕ В\/С/i],['electricity',/ЭЛЕКТРОСНАБЖЕНИЕ/i]];
+      const kind=names.concat(aliases).find(([,pattern])=>pattern.test(label))?.[0]||'other';
+      rows.push({kind,mode:'quantity',title:label,unit,quantity:String(n(m[2])),rate:String(n(m[4])),billed:String(Math.round((n(m[5])+n(m[6]))*100)/100),correction:String(n(m[6])),rateBasis:'1',confidence:'table'});
+    }
+    return rows;
+  }
   function parse(text, pages = []) {
     text = text.replace(/\u00a0/g, ' ');
     const rows = tableRows(pages);
     if(!rows.length)rows.push(...croppedTableRows(pages));
     if(!rows.length)rows.push(...simpleTableRows(pages));
+    if(!rows.length)rows.push(...settlementRows(text));
     // A gas table has an explicit method row and a tariff per thousand cubic metres.
     // Never use the account-balance table or the total payable as a service charge.
     const gas = /поставка\s+природного\s+газа|газоснабжение/i.test(text)||(/Метод\s+расчета/i.test(text)&&/Температ/i.test(text)&&/Узел/i.test(text));
