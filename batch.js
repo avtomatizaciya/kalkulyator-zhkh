@@ -59,7 +59,7 @@ async function automaticTariffs(){
     batchMissing=batchNeeded(unresolved.filter(row=>records.some(r=>patterns[row.kind]?.test(r.kind)&&Tariffs.effective(r,month)&&Tariffs.rate(r,row)!==null))).filter(([key])=>!known[key]);
     batchNotice=eligible>matched&&!batchMissing.length?'Для остальных услуг нет однозначно применимой ставки в справочнике.':'';
     renderAutomaticTariffs();
-    $('gis-status').textContent=`Официальные тарифы: сверено ${matched} из ${eligible}. `+(batchMissing.length?'Для остальных нужны: '+batchMissing.map(f=>f[1].toLowerCase()).join(', ')+'.':batchNotice);
+    $('gis-status').textContent=`Официальные тарифы: сверено ${matched} из ${eligible}. `+(batchMissing.length?'Не установлены автоматически: '+batchMissing.map(f=>f[1].toLowerCase()).join(', ')+'.':batchNotice);
     if(typeof renderResult==='function')renderResult(false);
     document.dispatchEvent(new CustomEvent('automatic-tariffs-result',{detail:{matched,eligible,missing:batchMissing.map(([key,title])=>({key,title}))}}));
   }catch(error){if(version===batchVersion){batchMissing=[];batchNotice='Не удалось загрузить официальные тарифы: '+error.message;renderAutomaticTariffs();$('gis-status').textContent=batchNotice;document.dispatchEvent(new CustomEvent('automatic-tariffs-result',{detail:{error:error.message,missing:[]}}));}}
@@ -77,11 +77,11 @@ async function openBatch(){
     input.onchange=()=>{batchContext[key]=input.value;automaticTariffs();};
     label.append(input);host.append(label);
   }
-  $('batch-message').textContent='Условия сверки можно исправить. Результат обновляется сразу после изменения.';
+  $('batch-message').textContent='Необязательно: меняйте только известные вам условия. Предложенные значения не подтверждаются при закрытии окна. Документы искать не нужно.';
   if(batchEvidence){const h=batchEvidence.house;for(const [url,title]of [[h.source,'Паспорт дома от '+h.sourceDate],[h.corroboration,'Публикация УК об испытаниях сетей, 2026'],[h.waterSource,'Тарифы вашей УК с 01.10.2026'],[h.electricSource,'Диапазоны и ставки электричества, 2026']]){const a=node('a',title+' ↗','evidence-link');a.href=url;a.target='_blank';a.rel='noopener';host.append(a);}}
   $('batch-submit').disabled=false;
 }
-$('batch-form').onsubmit=event=>{event.preventDefault();Object.assign(batchContext,Object.fromEntries(new FormData(event.target)));$('batch-dialog').close();automaticTariffs();};
+$('batch-form').onsubmit=event=>{event.preventDefault();$('batch-dialog').close();automaticTariffs();};
 $('gis-check').onclick=()=>{$('conditions-dialog').close();openBatch();};
 $('entry-supplier').addEventListener('change',()=>{for(const key of Object.keys(supplierKinds))delete batchContext[key];scheduleAutomaticTariffs();});
 document.addEventListener('tariff-region-change',()=>{batchVersion++;batchContext={};for(const row of state.entries)if(row.official?.automatic)row.official=null;scheduleAutomaticTariffs();});
@@ -94,7 +94,7 @@ function renderAutomaticTariffs(){
   if(host.dataset.fields===signature)return;
   host.dataset.fields=signature;host.replaceChildren();
   const required=batchMissing.filter(([key])=>!batchSuggestions[key]);
-  const message=required.length?'Нужно уточнить: '+required.map(f=>f[1].toLowerCase()).join(', '):batchEvidence?'Учтён паспорт дома от '+batchEvidence.house.sourceDate+'. '+(batchMissing.length?'Не подтверждено: '+batchMissing.map(f=>f[1].toLowerCase()).join(', '):'Условия найдены.'):'Есть предварительные условия. Они не подтверждают тариф для вашего дома.';
+  const message=required.length?'Автоматически не установлены: '+required.map(f=>f[1].toLowerCase()).join(', '):batchEvidence?'Источник условий: паспорт дома от '+batchEvidence.house.sourceDate+'. '+(batchMissing.length?'Не подтверждено: '+batchMissing.map(f=>f[1].toLowerCase()).join(', '):'Условия найдены.'):'Цена сравнивается с опубликованной ставкой. Применимость к вашему дому не подтверждена.';
   host.append(node('p',batchNotice||message,'note'));
   const edit=node('button','Условия и источники','text-button');edit.onclick=openBatch;host.append(edit);
 }
