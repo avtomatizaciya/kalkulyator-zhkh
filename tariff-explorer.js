@@ -8,6 +8,7 @@ const number = new Intl.NumberFormat('ru', { maximumFractionDigits: 8 });
 const date = value => value?.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3.$2.$1') || '';
 const collator = new Intl.Collator('ru', { numeric: true });
 const cache = new Map();
+let comparisonRecords=[],comparisonRequest=0;
 let manifest, corrections, records = [], current = [], groups = [], page = 0, request = 0;
 
 function node(tag, text, className) {
@@ -56,6 +57,7 @@ async function start() {
   try {
     manifest = await json('data/tariffs/index.json');
     options(region, manifest.regions.map(item => [item.file, item.name.trim()]));
+    options(el('compare-region'),manifest.regions.map(item=>[item.file,item.name.trim()]),'Только выбранный регион');
     region.value = manifest.regions.find(item => /ярославская область/i.test(item.name))?.file ?? region.value;
     month.value = manifest.date.slice(0, 7);
     el('coverage').textContent = `${manifest.regions.length} региона`;
@@ -115,7 +117,9 @@ function render() {
   el('result-content').hidden = !current.length;
   page = 0;
   renderRows();
-  groups = comparableGroups(matchingService);
+  const ownName=manifest.regions.find(r=>r.file===region.value)?.name.trim();
+  const extra=el('compare-region').value===region.value?[]:Tariffs.active(comparisonRecords,month.value).filter(r=>!service.value||r.kind===service.value);
+  groups = comparableGroups([...matchingService.map(r=>({...r,sourceRegion:ownName})),...extra]);
   setupChart();
 }
 
@@ -132,7 +136,7 @@ function renderRows() {
     button.setAttribute('aria-label', 'Основание ставки');
     button.addEventListener('click', () => showSource(record));
     source.append(button);
-    row.append(company, category, node('td', record.value, 'rate'), source);
+    row.append(company, category, node('td', record.value.replace(/^([\d\s]+(?:[.,]\d+)?)\s*р\.\//,(_,v)=>number.format(Number(v.replace(/\s/g,'').replace(',','.')))+' ₽/').replace(/Кубический метр/gi,'м³').replace(/Гигакалория/gi,'Гкал').replace(/Киловатт-час/gi,'кВт·ч'), 'rate'), source);
     return row;
   });
   el('rows').replaceChildren(...rows);
@@ -151,23 +155,25 @@ function comparableGroups(rows) {
     if (!Number.isFinite(value)) continue;
     const description = record.description.replace(/^\s*с\s*\d{2}\.\d{2}\.20\d{2}(?:\s*(?:по|[-–])\s*\d{2}\.\d{2}\.20\d{2})?\s*[,;:]?\s*/i, '').trim();
     const unit = rate[2].trim();
-    const criteria = [record.kind, record.component, record.stake, record.criteria, description, record.discount, record.composite, unit];
+    const overview=Boolean(el('compare-region').value&&el('compare-region').value!==region.value);
+    const criteria = overview?[record.kind,record.component,record.discount,record.composite,unit]:[record.kind, record.component, record.stake, record.criteria, description, record.discount, record.composite, unit];
     const key = JSON.stringify(criteria.map(item => item.trim().toLowerCase().replace(/\s+/g, ' ')));
-    if (!byConditions.has(key)) byConditions.set(key, { record, description, unit, suppliers: new Map() });
+    if (!byConditions.has(key)) byConditions.set(key, { record, description, unit, overview, suppliers: new Map() });
     const same = byConditions.get(key).suppliers;
-    if (same.has(record.supplier) && same.get(record.supplier)?.value !== value) same.set(record.supplier, null);
-    else if (!same.has(record.supplier)) same.set(record.supplier, { record, value });
+    const supplierKey=record.sourceRegion+'|'+record.supplier+(overview?'|'+value:'');
+    if (same.has(supplierKey) && same.get(supplierKey)?.value !== value) same.set(supplierKey, null);
+    else if (!same.has(supplierKey)) same.set(supplierKey, { record, value });
   }
   return [...byConditions.values()].map(group => ({ ...group, entries: [...group.suppliers.values()].filter(Boolean) }))
-    .filter(group => group.entries.length >= 2 && (!supplier.value || group.entries.some(item => item.record.supplier === supplier.value)))
+    .filter(group => (!el('compare-region').value||el('compare-region').value===region.value||new Set(group.entries.map(x=>x.record.sourceRegion)).size>=2) && group.entries.length >= 2 && (!supplier.value || group.entries.some(item => item.record.supplier === supplier.value)))
     .sort((a, b) => b.entries.length - a.entries.length);
 }
 
 function setupChart() {
   const select = el('group');
-  options(select, groups.map(({ record, description, unit, entries }, index) => [String(index),
-    [record.kind, record.component, record.stake, record.criteria, description,
-      record.discount === 'Да' && 'Льготный', record.composite === 'Да' && 'Составной', `₽ / ${unit}`, `${entries.length} пост.`].filter(Boolean).join(' · ')
+  options(select, groups.map(({ record, description, unit, entries, overview }, index) => [String(index),
+    [overview?'Обзор цен':'',record.kind, record.component, !overview&&record.stake, !overview&&record.criteria, !overview&&description,
+      record.discount === 'Да' && 'Льготный', record.composite === 'Да' && 'Составной', `₽ / ${unit}`, `${entries.length} ставок`].filter(Boolean).join(' · ')
   ]), groups.length ? 'Выберите условия' : 'Нет сопоставимых ставок');
   select.value = groups.length ? '0' : '';
   select.disabled = !groups.length;
@@ -179,9 +185,9 @@ function renderChart() {
   const select = el('group');
   const group = select.value === '' ? undefined : groups[Number(select.value)];
   chart.replaceChildren();
-  el('chart-caption').textContent = group ? '' : 'График появится, когда найдутся ставки как минимум двух поставщиков с одинаковыми условиями.';
+  el('chart-caption').textContent = group ? '' : 'Нет сопоставимых ставок для выбранных регионов и условий. Разные услуги и единицы не объединяются.';
   if (!group) return;
-  const { record, description, unit, entries } = group;
+  const { record, description, unit, entries, overview } = group;
   const sorted = [...entries].sort((a, b) => a.value - b.value);
   const shown = sorted.slice(0, 10);
   const selected = sorted.find(item => item.record.supplier === supplier.value);
@@ -196,6 +202,7 @@ function renderChart() {
   for (const item of shown) {
     const row = node('li', '', item === selected ? 'highlight' : '');
     const company = node('button', shortName(item.record.supplier), 'chart-company');
+    company.title=item.record.sourceRegion+' · '+item.record.supplier;
     company.type = 'button';
     company.addEventListener('click', () => showSource(item.record));
     const track = node('div', '', 'track');
@@ -206,7 +213,20 @@ function renderChart() {
     row.append(company, track, node('strong', number.format(item.value)));
     list.append(row);
   }
-  chart.append(node('p', conditions.join(' · '), 'chart-conditions'), list);
+  const summary=node('div','','chart-summary');
+  const median=sorted.length%2?sorted[Math.floor(sorted.length/2)].value:(sorted[sorted.length/2-1].value+sorted[sorted.length/2].value)/2;
+  for(const [label,value] of [['Минимум',sorted[0].value],['Медиана',median],['Максимум',highest]]){const card=node('div','');card.append(node('small',label),node('strong',number.format(value)));summary.append(card);}
+  const plot=node('div','','distribution');plot.setAttribute('aria-label','Распределение ставок');
+  const regions=[...new Set(sorted.map(x=>x.record.sourceRegion))];
+  for(const [lane,name] of regions.entries()){
+    plot.append(node('small',name,'region-legend'));
+    const track=node('div','','dot-track');
+    for(const item of sorted.filter(x=>x.record.sourceRegion===name)){
+      const dot=node('button','','rate-dot');dot.style.left=(highest?item.value/highest*100:0)+'%';dot.style.top=(12+(sorted.indexOf(item)%3)*12)+'px';dot.dataset.lane=lane;
+      dot.title=shortName(item.record.supplier)+' · '+number.format(item.value)+' ₽ / '+unit;dot.setAttribute('aria-label',dot.title);dot.onclick=()=>showSource(item.record);track.append(dot);
+    }plot.append(track);
+  }
+  chart.append(summary,node('p',`${entries.length} ставок · ₽ / ${unit}`,'chart-conditions'),plot,node('p',overview?'Обзор цен: категории, территории и условия могут отличаться. Откройте точку для подробностей.':conditions.join(' · '),'chart-conditions'),list);
 }
 
 function showSource(record) {
@@ -225,6 +245,18 @@ function showSource(record) {
   el('source-link').textContent = record.sourceUrl ? 'Открыть документ ↗' : 'Скачать архив ГИС ЖКХ ↗';
   el('source-dialog').showModal();
 }
+
+
+el('compare-region').addEventListener('change',async()=>{
+  const version=++comparisonRequest,file=el('compare-region').value;comparisonRecords=[];render();
+  el('compare-status').textContent=file?'Загружаем второй регион…':'';if(!file)return;
+  try{
+    const name=manifest.regions.find(r=>r.file===file).name.trim();
+    if(!cache.has(file))cache.set(file,Tariffs.mergeCorrections(Tariffs.decode(await json(`data/tariffs/${file}`)),corrections,name));
+    if(version!==comparisonRequest)return;
+    comparisonRecords=cache.get(file).map(r=>({...r,sourceRegion:name}));el('compare-status').textContent='Сопоставление цен: одинаковые услуга и единица. Условия могут отличаться.';render();
+  }catch{if(version===comparisonRequest)el('compare-status').textContent='Второй регион не загрузился. Выберите его повторно.';}
+});
 
 region.addEventListener('change', loadRegion);
 for (const control of controls.slice(1)) control.addEventListener('change', render);

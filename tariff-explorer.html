@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#10261e">
   <title>Обозреватель тарифов ЖКХ</title>
-  <link rel="stylesheet" href="tariff-explorer.css">
+  <link rel="stylesheet" href="tariff-explorer.css?v=20261107-35">
   <script src="tariffs.js" defer></script>
-  <script src="tariff-explorer.js" defer></script>
+  <script src="tariff-explorer.js?v=20261107-35" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -55,8 +55,9 @@
     </section>
     <section class="comparison" aria-labelledby="comparison-title">
       <p class="eyebrow">Сравнение поставщиков</p>
-      <h2 id="comparison-title">График ставок</h2>
-      <p>Сравниваем ставки за выбранный месяц в одном регионе при одинаковой услуге, единице и условиях, записанных в базе.</p>
+      <h2 id="comparison-title">Разброс тарифов</h2>
+      <p>Внутри региона - одинаковые условия. Между регионами - обзор цен по одной услуге и единице. Точка открывает условия и источник.</p>
+      <label>Добавить регион для сравнения<select id="compare-region"><option value="">Только выбранный регион</option></select></label><p id="compare-status" role="status"></p>
       <label>Условия сравнения<select id="group" disabled><option value="">Нет сопоставимых ставок</option></select></label>
       <p id="chart-caption" role="status"></p>
       <div id="chart"></div>
