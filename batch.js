@@ -29,7 +29,7 @@ async function openBatch(){
         }
         for(const [value,title] of options){const option=node('option',title);option.value=value;input.append(option);}
       }
-      input.name=key;input.value=batchContext[key]||'';label.append(input);host.append(label);
+      input.name=key;input.value=batchContext[key]||'';if(type==='provider'&&!input.value){const name=$('entry-supplier').value.trim().toLowerCase();const matches=[...input.options].filter(o=>o.value&&o.value.toLowerCase()===name);if(matches.length===1)input.value=matches[0].value;}label.append(input);host.append(label);
     }
     $('batch-message').textContent='Укажите условия из договора или квитанции. Если не знаете, оставьте «Не знаю»: неподтвержденную ставку мы не подставим. Условия применяются ко всем услугам выбранного месяца.';
     $('batch-submit').disabled=false;

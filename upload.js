@@ -1,6 +1,40 @@
 'use strict';
-let receiptJob=0, receiptWorker=null;
+let receiptJob=0, receiptWorker=null, receiptQueue=null;
 const uploadStatus=text=>{document.getElementById('upload-status').textContent=text};
+function cancelReceiptQueue(){if(receiptQueue)receiptQueue.cancel();}
+function createReceiptQueue(job){
+  cancelReceiptQueue();
+  let tail=Promise.resolve(),closed=false,abort,completed=0,total=0;
+  const rasters=new Set(),cancelled=new Promise(resolve=>{abort=resolve;});
+  const queue={
+    get pending(){return total-completed;},
+    status(text){
+      if(job!==receiptJob||closed)return;
+      // A recognition progress tick must never replace the next crop's instructions.
+      if(!document.getElementById('crop-dialog').open)uploadStatus(text);
+    },
+    enqueue(canvas,period){
+      total++;rasters.add(canvas);
+      const pending=tail.then(async()=>{
+        if(closed||job!==receiptJob)throw new Error('Отменено');
+        const preview=canvas.toDataURL('image/jpeg',.9);
+        const read=await Promise.race([recognizeImage(canvas,job),cancelled.then(()=>{throw new Error('Отменено');})]);
+        if(closed||job!==receiptJob)throw new Error('Отменено');
+        return {...read,period,previews:[preview]};
+      }).finally(()=>{completed++;canvas.width=canvas.height=0;rasters.delete(canvas);});
+      // Keep processing later crops even if one is unreadable. Callers own each result.
+      tail=pending.catch(()=>{});
+      return pending;
+    },
+    cancel(){
+      if(closed)return;closed=true;abort();
+      for(const canvas of rasters)canvas.width=canvas.height=0;
+      rasters.clear();
+    },
+    close(){queue.cancel();if(receiptQueue===queue)receiptQueue=null;}
+  };
+  receiptQueue=queue;return queue;
+}
 async function prepareImage(image, maxSize=3600) {
   const source = image instanceof Blob ? await createImageBitmap(image) : image;
   const scale = Math.min(3, maxSize / Math.max(source.width, source.height));
@@ -37,8 +71,9 @@ async function recognizeImage(image, job) {
   const worker = await Tesseract.createWorker('rus', 1, {
     workerPath: 'vendor/tesseract.js/worker.min.js', corePath: 'vendor/tesseract.js-core',
     langPath: 'vendor/lang', cacheMethod: 'none', workerBlobURL: false,
-    logger: m => { if (job === receiptJob) uploadStatus(m.status === 'recognizing text' ? `Читаем квитанцию: ${Math.round(m.progress * 100)}%` : 'Подготавливаем распознавание на вашем устройстве…'); },
+    logger: m => { if (job === receiptJob) {const text=m.status === 'recognizing text' ? `Читаем квитанцию: ${Math.round(m.progress * 100)}%` : 'Подготавливаем распознавание на вашем устройстве…';if(receiptQueue)receiptQueue.status(text);else uploadStatus(text);} },
   });
+  if(job!==receiptJob){await worker.terminate();throw new Error('Отменено');}
   receiptWorker = worker;
   let deadline;
   try {
@@ -98,27 +133,28 @@ async function recognizeImage(image, job) {
     canvas.width = canvas.height = 0; return result;
   } finally { clearTimeout(deadline); await worker.terminate(); if (receiptWorker === worker) receiptWorker = null; }
 }
-async function cropAndRead(canvas, job, options={}) {
+async function cropAndRead(canvas, job, options={}, queue=null) {
   if(job!==receiptJob)throw new Error('Отменено');
   const selected=await ReceiptCrop.select(canvas,options);
   if(job!==receiptJob) { if(selected?.canvas)selected.canvas.width=selected.canvas.height=0;throw new Error('Отменено'); }
   if(!selected||selected.skip)return {skipped:true};
+  if(queue)return {pending:queue.enqueue(selected.canvas,selected.period),period:selected.period};
   try { return {...await recognizeImage(selected.canvas,job),period:selected.period,previews:[selected.canvas.toDataURL("image/jpeg",.9)]}; }
   finally { selected.canvas.width=selected.canvas.height=0; }
 }
-async function readPhoto(file,job) {
+async function readPhoto(file,job,queue=null) {
   const bitmap=await createImageBitmap(file),scale=Math.min(1,3600/Math.max(bitmap.width,bitmap.height));
   const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
   try {
     const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
-    return await cropAndRead(canvas,job,{page:1,pages:1,period:receiptFilePeriod(file.name)});
+    return await cropAndRead(canvas,job,{page:1,pages:1,period:receiptFilePeriod(file.name)},queue);
   } finally { canvas.width=canvas.height=0;bitmap.close(); }
 }
-async function readPdf(file, job) {
+async function readPdf(file, job, queue=null) {
   const pdfjs = await import('./vendor/pdfjs-dist/pdf.mjs');
   pdfjs.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs-dist/pdf.worker.mjs';
   const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, useSystemFonts: true });
-  const pages=[],geometry=[],previews=[];let month='';
+  const pages=[],geometry=[],previews=[],pending=[];let month='';
   try {
     const pdf=await task.promise;
     if(pdf.numPages>5)throw new Error('В PDF больше 5 страниц. Выберите отдельную квитанцию до 5 страниц.');
@@ -129,10 +165,15 @@ async function readPdf(file, job) {
       const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
       try {
         await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-        const read=await cropAndRead(canvas,job,{page:i,pages:pdf.numPages,period:month||receiptFilePeriod(file.name),fixedPeriod:Boolean(month)});
+        const read=await cropAndRead(canvas,job,{page:i,pages:pdf.numPages,period:month||receiptFilePeriod(file.name),fixedPeriod:Boolean(month)},queue);
         if(read.skipped)continue;
+        if(read.pending){month=read.period;pending.push(read.pending);continue;}
         month=read.period;pages.push(read.text);geometry.push(...read.pages);previews.push(...read.previews);
       } finally { canvas.width=canvas.height=0;page.cleanup(); }
+    }
+    if(queue&&pending.length){
+      const result=Promise.all(pending).then(reads=>({previews:reads.flatMap(r=>r.previews),text:reads.map(r=>r.text).join('\n'),pages:reads.flatMap(r=>r.pages),period:month,skipped:false}));
+      result.catch(()=>{});return {pending:result};
     }
     return {previews,text:pages.join('\n'),pages:geometry,period:month,skipped:!pages.length};
   } finally { await task.destroy(); }
