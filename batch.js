@@ -6,6 +6,7 @@ async function openBatch(){
   const dialog=$('batch-dialog'); if(!dialog.open)dialog.showModal();
   const host=$('batch-fields'); host.replaceChildren(); $('batch-message').textContent='Загружаем официальный справочник…'; $('batch-submit').disabled=true;
   const file=$('region').value, month=period();
+  if(!file){$('batch-message').textContent='Сначала выберите регион вверху страницы, затем откройте проверку снова.';return;}
   try {
     batchRecords=await Tariffs.regionData(file);
     if(file!==$('region').value||month!==period())throw new Error('Регион или месяц изменился. Откройте проверку заново.');
@@ -40,7 +41,7 @@ $('batch-form').onsubmit=event=>{
   const rows=state.entries.filter(r=>r.enabled&&r.period===period());
   const splitElectricity=rows.filter(r=>r.kind==='electricity').length>1;
   for(const row of rows){
-    row.official=null;const result=splitElectricity&&row.kind==='electricity'?{status:'missing'}:Tariffs.match(batchRecords,row,context);row.gisStatus=result.status;
+    row.official=null;const result=row.mode==='hot'||splitElectricity&&row.kind==='electricity'?{status:'missing'}:Tariffs.match(batchRecords,row,context);row.gisStatus=result.status;
     if(result.status!=='separate')eligible++;
     if(result.status==='matched'){row.official={...Tariffs.reference(result.record,row,period()),context:{...context}};matched++;}
   }
@@ -48,6 +49,6 @@ $('batch-form').onsubmit=event=>{
   $('gis-status').textContent=`По условиям найдены ставки для ${matched} из ${eligible} коммунальных услуг. ${matched<eligible?'Для остальных уточните условия или выберите ставку вручную.':'Проверьте источники и распознанные цифры.'} ${splitElectricity?'Электричество разбито на несколько строк: выберите зону и диапазон каждой строки вручную. ':''}Содержание жилья и капремонт проверяются по отдельным основаниям.`;
 };
 $('gis-check').onclick=()=>{$('conditions-dialog').close();openBatch();};
-document.addEventListener('tariff-region-change',()=>{batchContext={};$('gis-status').textContent='Выберите условия, чтобы сравнить начисления с официальными ставками.';});
+document.addEventListener('tariff-region-change',()=>{batchContext={};$('gis-status').textContent=$('region').value?'Выберите условия, чтобы сравнить начисления с официальными ставками.':'Сначала выберите регион вверху страницы.';});
 
 document.addEventListener('receipt-clear',()=>{batchContext={};$('gis-status').textContent='Один раз укажите поставщиков и условия для всех услуг месяца.';});

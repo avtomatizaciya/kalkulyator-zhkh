@@ -7,11 +7,12 @@
   function effective(record, month) {
     if (!/^20\d{2}-\d{2}$/.test(month)) return false;
     const range = record.period.match(/(\d{4}-\d{2}-\d{2})\s*-\s*(\d{4}-\d{2}-\d{2}|по\s+(?:наст\.?\s*время|настоящее\s+время))/i);
-    if (!range || month < range[1].slice(0, 7) || (/^\d/.test(range[2]) && month > range[2].slice(0, 7))) return false;
+    const first=month+'-01',last=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5)),0)).toISOString().slice(0,10);
+    if (!range || first < range[1] || (/^\d/.test(range[2]) && last > range[2])) return false;
     const specific = record.description.match(/с\s*(\d{2})\.(\d{2})\.(20\d{2})\s*(?:по|[-–])\s*(\d{2})\.(\d{2})\.(20\d{2})/i);
-    if (specific && (month < specific[3] + '-' + specific[2] || month > specific[6] + '-' + specific[5])) return false;
-    const starts = [...record.description.matchAll(/(?:^|\s)с\s*(\d{2})[.](\d{2})[.](20\d{2})/gi)].map(m => m[3] + '-' + m[2]);
-    return !starts.length || starts.some(start => start <= month);
+    if (specific && (first < specific[3] + '-' + specific[2] + '-' + specific[1] || last > specific[6] + '-' + specific[5] + '-' + specific[4])) return false;
+    const starts = [...record.description.matchAll(/(?:^|\s)с\s*(\d{2})[.](\d{2})[.](20\d{2})/gi)].map(m => m[3] + '-' + m[2] + '-' + m[1]);
+    return !starts.length || starts.every(start => start <= first);
   }
   function rate(record, row) {
     const match = record.value.match(/^([\d\s\u00a0]+(?:[.,]\d+)?)\s*(?:р\.|руб\.?)\s*\/\s*(.+)$/i);

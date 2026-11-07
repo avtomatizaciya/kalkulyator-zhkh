@@ -103,7 +103,7 @@ async function cropAndRead(canvas, job, options={}) {
   const selected=await ReceiptCrop.select(canvas,options);
   if(job!==receiptJob) { if(selected?.canvas)selected.canvas.width=selected.canvas.height=0;throw new Error('Отменено'); }
   if(!selected||selected.skip)return {skipped:true};
-  try { return {...await recognizeImage(selected.canvas,job),period:selected.period}; }
+  try { return {...await recognizeImage(selected.canvas,job),period:selected.period,previews:[selected.canvas.toDataURL("image/jpeg",.9)]}; }
   finally { selected.canvas.width=selected.canvas.height=0; }
 }
 async function readPhoto(file,job) {
@@ -118,7 +118,7 @@ async function readPdf(file, job) {
   const pdfjs = await import('./vendor/pdfjs-dist/pdf.mjs');
   pdfjs.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs-dist/pdf.worker.mjs';
   const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, useSystemFonts: true });
-  const pages=[],geometry=[];let month='';
+  const pages=[],geometry=[],previews=[];let month='';
   try {
     const pdf=await task.promise;
     if(pdf.numPages>5)throw new Error('В PDF больше 5 страниц. Выберите отдельную квитанцию до 5 страниц.');
@@ -131,9 +131,9 @@ async function readPdf(file, job) {
         await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
         const read=await cropAndRead(canvas,job,{page:i,pages:pdf.numPages,period:month||document.getElementById('period').value,fixedPeriod:Boolean(month)});
         if(read.skipped)continue;
-        month=read.period;pages.push(read.text);geometry.push(...read.pages);
+        month=read.period;pages.push(read.text);geometry.push(...read.pages);previews.push(...read.previews);
       } finally { canvas.width=canvas.height=0;page.cleanup(); }
     }
-    return {text:pages.join('\n'),pages:geometry,period:month,skipped:!pages.length};
+    return {previews,text:pages.join('\n'),pages:geometry,period:month,skipped:!pages.length};
   } finally { await task.destroy(); }
 }
