@@ -51,13 +51,13 @@
       ctx.strokeStyle='#32bd8d';ctx.lineWidth=Math.max(2,view.width/350);ctx.strokeRect(rect.x*sx,rect.y*sy,rect.width*sx,rect.height*sy);
       $('crop-size').textContent=`Выделено ${rect.width} × ${rect.height} пикселей. Проверьте, что все нужные строки и заголовки внутри.`;
     }else $('crop-size').textContent='Выделите таблицу вместе с заголовками столбцов. Личные реквизиты и QR-код оставьте за рамкой.';
-    $('crop-accept').disabled=!rect||!$('crop-safe').checked||!$('crop-period').value;
+    $('crop-accept').disabled=!rect;
   }
   function point(event){const r=view.getBoundingClientRect();return [Math.max(0,Math.min(100,(event.clientX-r.left)/r.width*100)),Math.max(0,Math.min(100,(event.clientY-r.top)/r.height*100))];}
   function drawTo(event){
     if(!start)return;const p=point(event);
     bounds=[Math.min(start[0],p[0]),Math.min(start[1],p[1]),Math.max(start[0],p[0]),Math.max(start[1],p[1])];
-    keys.forEach((key,i)=>{$('crop-'+key).value=bounds[i].toFixed(1);});$('crop-safe').checked=false;paint();
+    keys.forEach((key,i)=>{$('crop-'+key).value=bounds[i].toFixed(1);});paint();
   }
   view.addEventListener('pointerdown',event=>{
     if(!source||!event.isPrimary||event.button>0)return;
@@ -69,7 +69,7 @@
     }
     start=point(event);
     bounds=null;
-    $('crop-safe').checked=false;
+
     paint();
   });
   view.addEventListener('pointermove',event=>{
@@ -86,16 +86,15 @@
     if(view.hasPointerCapture(event.pointerId))view.releasePointerCapture(event.pointerId);
   });
   view.addEventListener('pointercancel',()=>{start=panStart=null;});
-  for(const key of keys)$('crop-'+key).addEventListener('input',()=>{bounds=keys.map(k=>$('crop-'+k).value);$('crop-safe').checked=false;paint();});
-  $('crop-period').addEventListener('input',()=>{$('crop-safe').checked=false;paint();});
-  $('crop-safe').addEventListener('change',paint);
+  for(const key of keys)$('crop-'+key).addEventListener('input',()=>{bounds=keys.map(k=>$('crop-'+k).value);paint();});
+  $('crop-period').addEventListener('input',()=>{paint();});
   function settle(result){
     const resolve=finish;finish=null;source=null;bounds=null;start=panStart=null;
-    view.width=view.height=0;keys.forEach(k=>{$('crop-'+k).value='';});$('crop-safe').checked=false;$('crop-period').value='';$('crop-size').textContent='';
+    view.width=view.height=0;keys.forEach(k=>{$('crop-'+k).value='';});$('crop-period').value='';$('crop-size').textContent='';
     if(dialog.open)dialog.close();if(resolve)resolve(result);
   }
   $('crop-form').addEventListener('submit',event=>{
-    event.preventDefault();if(!source||!$('crop-safe').checked||!$('crop-period').value)return;
+    event.preventDefault();if(!source)return;
     const rect=rectangle(bounds,source.width,source.height);if(!rect)return;
     // A fresh raster contains only selected pixels: no EXIF, PDF text or outside area.
     const canvas=document.createElement('canvas');canvas.width=rect.width;canvas.height=rect.height;
@@ -107,8 +106,8 @@
   $('crop-cancel').onclick=cancelImport;dialog.addEventListener('cancel',event=>{event.preventDefault();cancelImport();});
   root.ReceiptCrop={rectangle,cancel:()=>settle(null),select:(canvas,options={})=>{
     if(finish)throw new Error('Сначала завершите выделение предыдущей страницы.');
-    source=canvas;bounds=null;start=null;keys.forEach(k=>{$('crop-'+k).value='';});$('crop-safe').checked=false;
-    $('crop-period').value=options.period||$('period').value;$('crop-period').readOnly=Boolean(options.fixedPeriod);
+    source=canvas;bounds=null;start=null;keys.forEach(k=>{$('crop-'+k).value='';});
+    $('crop-period').value=options.period||'';$('crop-period').readOnly=Boolean(options.fixedPeriod);
     $('crop-page').textContent=options.pages>1?`Страница ${options.page} из ${options.pages}. Можно пропустить страницу без начислений.`:'Перетащите указатель по таблице. Для мелкого текста нажмите «+».';
     $('crop-skip').textContent=options.pages>1?'Пропустить страницу':'Пропустить файл';
     const scale=Math.min(1,3000/Math.max(canvas.width,canvas.height));

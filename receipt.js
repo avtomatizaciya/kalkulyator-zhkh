@@ -84,9 +84,9 @@
           if(numericCells.some(c=>! /^-?\d+(?:\.\d+)?$/.test(c.text)))continue;
           const before=numericCells.filter(c=>c.right<=unit.x),after=numericCells.filter(c=>c.x>unit.x+(unit.w||0));
           // Printed EPD order: code, tariff, optional normative, unit, volume, cost, corrections, final.
-          const rate=before.find(c=>/\./.test(c.text));if(!rate||after.length<3)continue;
+          const rate=before.find(c=>/\./.test(c.text));if(!rate||after.length<3){rows.push({kind,mode:'quantity',quantity:'',rate:rate?.text||'',billed:'',correction:'0',rateBasis:'1',title:label,unit:unit.text,confidence:'partial'});continue;}
           const [quantity,original]=after,final=after.at(-1),correction=after.slice(2,-1).reduce((a,c)=>a+Number(c.text),0);
-          if(Math.abs(Number(original.text)+correction-Number(final.text))>.011)continue;
+          if(Math.abs(Number(original.text)+correction-Number(final.text))>.011){rows.push({kind,mode:'quantity',quantity:quantity.text,rate:rate.text,billed:'',correction:String(correction),rateBasis:'1',title:label,unit:unit.text,confidence:'partial'});continue;}
           rows.push({kind,mode:'quantity',quantity:quantity.text,rate:rate.text,billed:final.text,correction:String(correction),rateBasis:'1',title:label,unit:unit.text.replace(/^м2\.?$/,'м²').replace(/^м3\.?$/,'м³').replace('кВт/ч','кВт·ч'),confidence:'table'});
         }
         continue;
@@ -128,13 +128,13 @@
           // Separate printed correction columns must not be swallowed into an amount cell.
           const cell=ws.filter(w=>centre(w)>=left&&centre(w)<right&&/^[−\-\d.,]+$/.test(w.text)).map(w=>w.text).join('').replace(/−/g,'-').replace(',','.');
           if(!cell&&a.key.startsWith('correction')){values[a.key]='0';continue}
-          if(!/^-?\d+(?:\.\d+)?$/.test(cell)){ambiguous=true;break}values[a.key]=cell;
+          if(!/^-?\d+(?:\.\d+)?$/.test(cell)){ambiguous=true;values[a.key]='';continue}values[a.key]=cell;
         }
         const correction=Object.entries(values).filter(([key])=>key.startsWith('correction')).reduce((a,[,v])=>a+Number(v),0);
-        if(ambiguous||Math.abs(Number(values.original)+correction-Number(values.billed))>.011)continue;
-        if(heat&&/^\d{7,}$/.test(values.quantity))continue;
+        if(values.original&&values.billed&&Math.abs(Number(values.original)+correction-Number(values.billed))>.011){values.billed='';ambiguous=true;}
+        if(heat&&/^\d{7,}$/.test(values.quantity)){values.quantity='';ambiguous=true;}
         const unit=ws.find(w=>/^(?:м[23³²]\.?|Гкал|кВт\/ч|кВт·ч)$/i.test(w.text))?.text||'';
-        rows.push({kind:component?'hot':found[0],mode:'quantity',quantity:values.quantity,rate:values.rate,billed:values.billed,correction:String(correction),rateBasis:'1',title:label,unit:unit.replace(/^м2\.?$/,'м²').replace(/^м3\.?$/,'м³').replace('кВт/ч','кВт·ч'),confidence:'table'});
+        rows.push({kind:component?'hot':found[0],mode:'quantity',quantity:values.quantity,rate:values.rate,billed:values.billed,correction:String(correction),rateBasis:'1',title:label,unit:unit.replace(/^м2\.?$/,'м²').replace(/^м3\.?$/,'м³').replace('кВт/ч','кВт·ч'),confidence:ambiguous?'partial':'table'});
       }
     }
     return rows;

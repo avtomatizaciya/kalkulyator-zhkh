@@ -63,3 +63,7 @@ dialog{width:min(820px,94vw);max-height:92vh;border:1px solid var(--line);border
 #receipt-images img{max-width:none}
 #text-dialog{width:min(1100px,100%);max-width:100%;max-height:100dvh}
 @media(max-height:450px){.crop-header,.crop-footer{padding:4px 12px}.crop-header .note,.crop-explanation{display:none}.crop-tools{margin-top:4px}.crop-footer{max-height:45dvh}}
+
+.result-rows{display:grid;gap:12px;margin:20px 0}.result-row{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;padding:16px;border:1px solid var(--line,#ddd);border-radius:12px}.result-row>strong:first-child{grid-column:1/-1}.result-row .text-button{text-align:left}.result-row .note{margin:0}@media(max-width:480px){.result-row{grid-template-columns:1fr}.result-row>strong:first-child{grid-column:auto}}
+
+.result-fields{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.result-fields .fld{min-width:0;font-size:12px}.result-fields input{width:100%;min-width:0;box-sizing:border-box}

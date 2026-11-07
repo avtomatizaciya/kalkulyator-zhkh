@@ -111,7 +111,7 @@ async function readPhoto(file,job) {
   const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
   try {
     const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
-    return await cropAndRead(canvas,job,{page:1,pages:1});
+    return await cropAndRead(canvas,job,{page:1,pages:1,period:receiptFilePeriod(file.name)});
   } finally { canvas.width=canvas.height=0;bitmap.close(); }
 }
 async function readPdf(file, job) {
@@ -129,11 +129,16 @@ async function readPdf(file, job) {
       const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
       try {
         await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-        const read=await cropAndRead(canvas,job,{page:i,pages:pdf.numPages,period:month||document.getElementById('period').value,fixedPeriod:Boolean(month)});
+        const read=await cropAndRead(canvas,job,{page:i,pages:pdf.numPages,period:month||receiptFilePeriod(file.name),fixedPeriod:Boolean(month)});
         if(read.skipped)continue;
         month=read.period;pages.push(read.text);geometry.push(...read.pages);previews.push(...read.previews);
       } finally { canvas.width=canvas.height=0;page.cleanup(); }
     }
     return {previews,text:pages.join('\n'),pages:geometry,period:month,skipped:!pages.length};
   } finally { await task.destroy(); }
+}
+
+function receiptFilePeriod(name){
+  const m=name.match(/(?:^|[^0-9])(20[0-9]{2})[ ._-](0[1-9]|1[0-2])(?:[^0-9]|$)/);
+  return m?m[1]+'-'+m[2]:'';
 }
