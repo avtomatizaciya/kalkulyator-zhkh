@@ -21,5 +21,6 @@
   "tesseract.js-core/tesseract-core-simd.wasm": "7d237a13edfeb0fa2f104744fccde0a00e0c076c3e23b7a8fc7af75ec9af2c3e",
   "tesseract.js-core/tesseract-core-simd.wasm.js": "6b61ef4e911b5cf57e656bbfe983d6e2b3711a02dd164154ddda064566e8e09d",
   "tesseract.js-core/tesseract-core.wasm": "c7f5ace62ac0ad065e71e9c6725f1d7cdf82e7eda8fba532cbb9563964da7098",
-  "tesseract.js-core/tesseract-core.wasm.js": "0bc6ce3e5fbbd0cd89706cf2fd70960e3372f4f01ee24265b26990808aaeb286"
+  "tesseract.js-core/tesseract-core.wasm.js": "0bc6ce3e5fbbd0cd89706cf2fd70960e3372f4f01ee24265b26990808aaeb286",
+  "lang/eng.traineddata.gz": "5bb8fe0a952a20e45644291951782a2c3712eab4f64c33f20ec18bb6d787e470"
 }

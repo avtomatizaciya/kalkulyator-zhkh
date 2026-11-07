@@ -89,7 +89,7 @@ async function recognizeImage(image, job) {
       try{await worker.setParameters({tessedit_pageseg_mode:'3'});const next=await Promise.race([worker.recognize(refined,{}, {text:true,tsv:true}),timeout]);data=next.data;canvas.width=canvas.height=0;canvas=refined;}
       catch(error){refined.width=refined.height=0;refinementExpired=true;}
     }
-    const words = (data.tsv || '').split('\n').slice(1).map(line => line.split('\t')).filter(c => c[0] === '5' && c[11]?.trim()).map(c => ({ x: Number(c[6]), y: Number(c[7]), w: Number(c[8]), h: Number(c[9]), text: c.slice(11).join('\t') }));
+    const words = (data.tsv || '').split('\n').slice(1).map(line => line.split('\t')).filter(c => c[0] === '5' && c[11]?.trim()).map(c => ({ x: Number(c[6]), y: Number(c[7]), w: Number(c[8]), h: Number(c[9]), confidence: Number(c[10]), text: c.slice(11).join('\t') }));
     // Re-read long numbers with ambiguous punctuation as isolated cells. Changed digits require
     // agreement of two segmentation modes; no value is inferred from a charge.
     let text=data.text;
@@ -131,6 +131,30 @@ async function recognizeImage(image, job) {
         if(accepted){text=text.replace(word.text,value);word.text=value;}
       }
       }catch(error){/* Optional digit refinement must not discard the readable receipt. */}
+    }
+    // Russian OCR confuses printed 8 with $, &, or drops it. Read uncertain money
+    // cells using the local Latin/digit model, never reconstruct amounts by arithmetic.
+    const amounts=words.filter(w=>w.confidence<90&&/^[\d$&]+[.,]\d{2}$/.test(w.text)).slice(0,60);
+    if(amounts.length&&!refinementExpired){
+      try{
+        await worker.reinitialize('eng',1);
+        for(const word of amounts){
+          if(job!==receiptJob)throw new Error('Отменено');
+          const cell=document.createElement('canvas');
+          cell.width=word.w+24;cell.height=word.h+24;
+          const context=cell.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,cell.width,cell.height);
+          context.drawImage(canvas,word.x-4,word.y-4,word.w+8,word.h+8,8,8,word.w+8,word.h+8);
+          try{
+            await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,-'});
+            const first=await Promise.race([worker.recognize(cell),timeout]);
+            const value=first.data.text.trim();
+            if(first.data.confidence<90||!/^\d+[.,]\d{2}$/.test(value)||value===word.text)continue;
+            await worker.setParameters({tessedit_pageseg_mode:'13'});
+            const second=await Promise.race([worker.recognize(cell),timeout]);
+            if(second.data.confidence>=70&&second.data.text.trim()===value){text=text.replace(word.text,value);word.text=value;}
+          }finally{cell.width=cell.height=0;}
+        }
+      }catch(error){/* Preserve the initial reading when optional refinement is unavailable. */}
     }
     if(job!==receiptJob)throw new Error('Отменено');
     const result = { text, pages: [{ width: canvas.width, height: canvas.height, words }] };
