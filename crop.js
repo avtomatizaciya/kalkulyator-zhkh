@@ -9,7 +9,13 @@
     const w=Math.min(width,Math.ceil(width*right/100))-x,h=Math.min(height,Math.ceil(height*bottom/100))-y;
     return w>=40&&h>=30?{x,y,width:w,height:h}:null;
   }
-  if(typeof module!=='undefined'&&module.exports){module.exports={rectangle};return;}
+  function textFragment(words,rect,scale){
+    const selected=words.filter(w=>w.text.trim()&&w.x>=rect.x&&w.y>=rect.y&&w.x+w.w<=rect.x+rect.width&&w.y+w.h<=rect.y+rect.height).map(w=>({...w,x:(w.x-rect.x)/scale,y:(w.y-rect.y)/scale,w:w.w/scale,h:w.h/scale}));
+    const lines=[];
+    for(const word of selected.sort((a,b)=>a.y-b.y||a.x-b.x)){let line=lines.find(l=>Math.abs(l.y-word.y)<2);if(!line){line={y:word.y,words:[]};lines.push(line);}line.words.push(word);}
+    return {text:lines.map(l=>l.words.sort((a,b)=>a.x-b.x).map(w=>w.text).join(' ')).join('\n'),pages:[{width:rect.width/scale,height:rect.height/scale,words:selected}]};
+  }
+  if(typeof module!=='undefined'&&module.exports){module.exports={rectangle,textFragment};return;}
   const $=id=>document.getElementById(id),keys=['left','top','right','bottom'];
   let source=null,finish=null,bounds=null,start=null,panStart=null,zoom=1;
   const dialog=$('crop-dialog'),view=$('crop-canvas');
@@ -99,12 +105,12 @@
     // A fresh raster contains only selected pixels: no EXIF, PDF text or outside area.
     const canvas=document.createElement('canvas');canvas.width=rect.width;canvas.height=rect.height;
     const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(source,rect.x,rect.y,rect.width,rect.height,0,0,canvas.width,canvas.height);
-    settle({canvas,period:$('crop-period').value});
+    settle({canvas,rect,period:$('crop-period').value});
   });
   $('crop-skip').onclick=()=>settle({skip:true});
   function cancelImport(){const cancel=$('cancel-upload');if(cancel)cancel.click();else settle(null);}
   $('crop-cancel').onclick=cancelImport;dialog.addEventListener('cancel',event=>{event.preventDefault();cancelImport();});
-  root.ReceiptCrop={rectangle,cancel:()=>settle(null),select:(canvas,options={})=>{
+  root.ReceiptCrop={rectangle,textFragment,cancel:()=>settle(null),select:(canvas,options={})=>{
     if(finish)throw new Error('Сначала завершите выделение предыдущей страницы.');
     source=canvas;bounds=null;start=null;keys.forEach(k=>{$('crop-'+k).value='';});
     $('crop-period').value=options.period||'';$('crop-period').readOnly=Boolean(options.fixedPeriod);

@@ -142,6 +142,15 @@ async function cropAndRead(canvas, job, options={}, queue=null) {
   const selected=await ReceiptCrop.select(canvas,options);
   if(job!==receiptJob) { if(selected?.canvas)selected.canvas.width=selected.canvas.height=0;throw new Error('Отменено'); }
   if(!selected||selected.skip)return {skipped:true};
+  if(options.nativeWords&&selected.rect){
+    const read=ReceiptCrop.textFragment(options.nativeWords,selected.rect,options.scale);
+    const parsed=Receipt.parse(read.text,read.pages);
+    if(parsed.rows.length&&parsed.rows.every(row=>row.quantity!==''&&row.rate!==''&&row.billed!=='')){
+      const result={...read,period:selected.period,previews:[selected.canvas.toDataURL('image/jpeg',.9)],method:'pdf-text'};
+      selected.canvas.width=selected.canvas.height=0;
+      return queue?{pending:Promise.resolve(result),period:selected.period}:result;
+    }
+  }
   if(queue)return {pending:queue.enqueue(selected.canvas,selected.period),period:selected.period};
   try { return {...await recognizeImage(selected.canvas,job),period:selected.period,previews:[selected.canvas.toDataURL("image/jpeg",.9)]}; }
   finally { selected.canvas.width=selected.canvas.height=0; }
@@ -167,10 +176,11 @@ async function readPdf(file, job, queue=null) {
       uploadStatus(`Готовим PDF: страница ${i} из ${pdf.numPages}. Выделите таблицу без личных реквизитов.`);
       const page=await pdf.getPage(i),base=page.getViewport({scale:1}),viewport=page.getViewport({scale:Math.min(6,4800/Math.max(base.width,base.height))});
       const content=await page.getTextContent();metadata.push(ReceiptContext.extract(content.items.map(item=>item.str).join(' ')));
+      const nativeWords=content.items.filter(item=>item.str?.trim()).map(item=>{const t=pdfjs.Util.transform(viewport.transform,item.transform),height=Math.hypot(t[2],t[3]);return {text:item.str,x:t[4],y:t[5]-height,w:item.width*viewport.scale,h:height};});
       const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
       try {
         await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-        const read=await cropAndRead(canvas,job,{page:i,pages:pdf.numPages,period:month||receiptFilePeriod(file.name),fixedPeriod:Boolean(month)},queue);
+        const read=await cropAndRead(canvas,job,{nativeWords,scale:viewport.scale,page:i,pages:pdf.numPages,period:month||receiptFilePeriod(file.name),fixedPeriod:Boolean(month)},queue);
         if(read.skipped)continue;
         if(read.pending){month=read.period;pending.push(read.pending);continue;}
         month=read.period;pages.push(read.text);geometry.push(...read.pages);previews.push(...read.previews);
