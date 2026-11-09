@@ -11,6 +11,8 @@
     if (!Number.isFinite(value) || Math.abs(value) > 1e12) throw new Error('Результат слишком большой. Проверьте введенные значения.');
     return Math.sign(value) * Math.round((Math.abs(value) + Number.EPSILON * Math.max(1, Math.abs(value))) * 100);
   }
+  // Разность и произведение десятичных чисел дают двоичный хвост (389.8099999999977): без очистки полкопейки округляются вниз.
+  const tidy = value => Number(value.toPrecision(12));
   function signed(value, name) {
     const text = String(value ?? '').trim().replace('−', '-');
     return (text.startsWith('-') ? -1 : 1) * number(text.replace(/^-/, ''), name);
@@ -22,7 +24,7 @@
         const previous = number(row.previous, 'предыдущие показания');
         const current = number(row.current, 'текущие показания');
         if (current < previous) throw new Error('Текущие показания меньше предыдущих. Проверьте счетчик и цифры.');
-        quantity = current - previous;
+        quantity = tidy(current - previous);
         formula = '(' + current + ' − ' + previous + ')';
       } else if (row.mode === 'norm') {
         const residents = number(row.residents, 'число проживающих');
@@ -30,7 +32,7 @@
         const norm = number(row.norm, 'норматив');
         const coefficient = number(row.coefficient, 'коэффициент');
         if (coefficient <= 0) throw new Error('Коэффициент должен быть больше нуля.');
-        quantity = residents * norm * coefficient;
+        quantity = tidy(residents * norm * coefficient);
         formula = residents + ' × ' + norm + ' × ' + coefficient;
       } else {
         quantity = number(row.quantity, 'объем или площадь');
