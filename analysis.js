@@ -31,17 +31,17 @@
       if (result.billed !== null) { compared++; comparedExpected += result.expected; billed += result.billed; difference += result.difference; }
       if(result.billed!==null){const chosen=row.official?.month===period?row.official:row.suggested?.month===period?row.suggested:null;const official=row.mode!=='hot'&&chosen?Calc.calculate({...row,rate:String(chosen.rate)}):null;const primary=official?.ok?official:result;primaryExpected+=primary.expected;primaryDifference+=primary.difference;}
       else add('missing', row.title + ': нет начисления', 'Введите сумму именно за эту услугу, без долга и пеней.');
-      if (result.difference) add('warning', row.title + ': разница ' + amount(result.difference / 100) + ' ₽', 'Объем × тариф с напечатанными коэффициентом и перерасчетом отличается от начисления. Сверьте цифры и запросите расшифровку. Это не доказательство переплаты.');
+      if (Calc.mismatch(result.difference)) add('warning', row.title + ': разница ' + amount(result.difference / 100) + ' ₽', 'Объем × тариф с напечатанными коэффициентом и перерасчетом отличается от начисления. Сверьте цифры и запросите расшифровку. Это не доказательство переплаты.');
       if (row.mode === 'hot') add('missing', row.title + ': нужны основания обоих компонентов ГВС', 'Одна выбранная ставка не подтверждает всю двухкомпонентную сумму. Уточните тариф теплоносителя, тариф тепла и расход тепла на подогрев; сверка арифметики остается доступной.', 'tariff');
       if (row.mode !== 'hot' && row.official && row.official.month === period) {
         const reference = Calc.calculate({...row,rate:String(row.official.rate)});
         if (reference.ok && reference.billed !== null) {
           officialCount++; officialDifference += reference.difference;
-          if (reference.difference) add('warning', row.title + ': отличается от ставки ГИС ЖКХ', `Разница ${amount(reference.difference / 100)} ₽ при том же объеме. Подтвердите поставщика, категорию, единицу и период выбранной ставки.`, 'tariff');
+          if (Calc.mismatch(reference.difference)) add('warning', row.title + ': отличается от ставки ГИС ЖКХ', `Разница ${amount(reference.difference / 100)} ₽ при том же объеме. Подтвердите поставщика, категорию, единицу и период выбранной ставки.`, 'tariff');
         }
       }
     }
-    if (compared === rows.length && compared && !difference && !checks.some(c => c.type === 'warning')) add('ok', 'Арифметика заполненных строк совпала', 'Долги, пени и неподтвержденные услуги в эту проверку не включены.');
+    if (compared === rows.length && compared && !checks.some(c => c.type === 'warning')) add('ok', 'Арифметика заполненных строк совпала', 'Разница до 2 копеек на строку считается округлением. Долги, пени и неподтвержденные услуги в эту проверку не включены.');
     const eligible=rows.filter(r=>!['maintenance','capital','other'].includes(r.kind)).length;
     if (officialCount < eligible) add('missing', `Ставки ГИС: проверено ${officialCount} из ${eligible} коммунальных услуг`, 'Сравнение выполнено автоматически по доступным данным. Совпадение цены не подтверждает неизвестные условия её применения. Дополнительные сведения необязательны.', 'tariff');
     if(rows.some(r=>r.kind==='maintenance'&&!r.grounds))add('missing','Содержание: основание ставки не найдено','В подключённых источниках нет основания ставки для этого дома. Проверена только арифметика; законность платы не установлена. Сумма может включать расходы на общее имущество и перерасчёты. Искать акты и протоколы для использования калькулятора не нужно.', 'grounds');

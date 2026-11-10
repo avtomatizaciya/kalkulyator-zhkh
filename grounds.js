@@ -71,7 +71,7 @@
     calculated.expected+=Calc.cents(additional);calculated.difference=calculated.billed===null?null:calculated.billed-calculated.expected;
     result.expected=calculated.expected;result.difference=calculated.difference;
     if(calculated.billed===null)add('missing',row.title+': нет начисленной суммы','Введите сумму услуги без долгов и пеней.');
-    else add(calculated.difference?'warning':'ok',row.title+(calculated.difference?': отличается от подтвержденного основания':': совпало с подтвержденным основанием'),`Ожидается ${new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}).format(calculated.expected/100)} ₽, начислено ${new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}).format(calculated.billed/100)} ₽. Основание: ${ref.act}. Условия и перерасчеты требуют сверки с документами.`);
+    else add(Calc.mismatch(calculated.difference)?'warning':'ok',row.title+(Calc.mismatch(calculated.difference)?': отличается от подтвержденного основания':': совпало с подтвержденным основанием'),`Ожидается ${new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}).format(calculated.expected/100)} ₽, начислено ${new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}).format(calculated.billed/100)} ₽. Основание: ${ref.act}. Условия и перерасчеты требуют сверки с документами.`);
     return result;
   }
   const api={valid,compatible,inspect};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ChargeGrounds=api;

@@ -60,7 +60,9 @@
       return { ok: true, quantity, expected, billed, difference: billed === null ? null : billed - expected, formula };
     } catch (error) { return { ok: false, error: error.message }; }
   }
-  const api = { number, cents, calculate };
+  // До 2 копеек на строку - обычное округление: объем в квитанции напечатан короче, чем считал исполнитель.
+  const mismatch = difference => Math.abs(difference) > 2;
+  const api = { number, cents, calculate, mismatch };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Zhkh = api;
 })(typeof globalThis === 'undefined' ? this : globalThis);
